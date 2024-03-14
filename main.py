@@ -1,7 +1,7 @@
 from bot import HanabiBot
 
 def main():
-    bot = HanabiBot([])
+    bot = HanabiBot()
     bot.run()
 
 if __name__ == "__main__":

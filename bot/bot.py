@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 
 class HanabiBot(commands.Bot):
-    def __init__(self, cogs):
+    def __init__(self, cogs = []):
         if not cogs:
             self._cogs = [p.stem for p in Path(".").glob("./bot/cogs/*.py")]
         else:
