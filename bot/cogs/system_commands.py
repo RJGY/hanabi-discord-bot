@@ -38,11 +38,19 @@ class SystemCommands(commands.Cog):
             embed.set_thumbnail(url=after.display_avatar)
             embed.set_author(name="Hanabi Bot")
             if not after.nick:
-                embed.add_field(name=f'{before.nick} reset their nickname to {after.name}', value='', inline=False)
-            elif not before.nick:
-                embed.add_field(name=f'{before.name} added their nickname to {after.nick}', value='', inline=False)
+                embed.add_field(name=f'{before.nick} (ID: {before.id}) reset their nickname to {after.name}', value='', inline=False)
             else:
-                embed.add_field(name=f'{before.nick} changed their nickname to {after.nick}', value='', inline=False)
+                embed.add_field(name=f'{before.name} (ID: {before.id}) changed their nickname to {after.nick}', value='', inline=False)
+            await self.bot.get_channel(self.general_logs).send(embed=embed)
+        if before.name != after.name:
+            embed = discord.Embed(
+                title="Username Change",
+                colour=discord.Colour.light_grey(),
+                timestamp=dt.datetime.now()
+            )
+            embed.set_thumbnail(url=after.display_avatar)
+            embed.set_author(name="Hanabi Bot")
+            embed.add_field(name=f'{before.name} (ID: {before.id}) changed their name to {after.name}', value='', inline=False)
             await self.bot.get_channel(self.general_logs).send(embed=embed)
         if before.display_avatar != after.display_avatar:
             embed = discord.Embed(
@@ -93,7 +101,7 @@ class SystemCommands(commands.Cog):
         
         for invite in invites_before_join:
             if invite.uses < self.find_invite_by_code(invites_after_join, invite.code).uses:
-                embed.add_field(name=f'{member.name} joined via Invite Code {invite.code}', value=f'Invited by {invite.inviter}')
+                embed.add_field(name=f'{member.name} joined via Invite Code {invite.code}', value=f'Invited by {invite.inviter}', inline=False)
 
         await self.bot.get_channel(self.general_logs).send(embed=embed)
         self.invites = await self.bot.get_guild(self.guild_id).invites()
@@ -115,6 +123,16 @@ class SystemCommands(commands.Cog):
             
     @commands.Cog.listener()
     async def on_invite_create(self, invite: discord.Invite):
+        embed = discord.Embed(
+            title="Invite Created",
+            colour=discord.Colour.light_grey(),
+            timestamp=dt.datetime.now()
+        )
+        embed.set_thumbnail(url=invite.inviter.display_avatar)
+        embed.set_author(name="Hanabi Bot")
+        embed.add_field(name=f'{invite.inviter.name} created an invite.', value=f'ID: {invite.code}', inline=False)
+
+        await self.bot.get_channel(self.general_logs).send(embed=embed)
         self.invites = await self.bot.get_guild(self.guild_id).invites()
         
     @commands.Cog.listener()
@@ -131,7 +149,7 @@ class SystemCommands(commands.Cog):
         )
         embed.set_thumbnail(url=before.author.display_avatar)
         embed.set_author(name="Hanabi Bot")
-        embed.add_field(name=f'{before.author.name} editted a message.', value='')
+        embed.add_field(name=f'{before.author.name} editted a message.', value='', inline=False)
         embed.add_field(name=f'Old Message:', value=f'{before.content}', inline=False)
         embed.add_field(name=f'New Message:', value=f'{after.content}', inline=False)
 
@@ -147,7 +165,7 @@ class SystemCommands(commands.Cog):
         )
         embed.set_thumbnail(url=before.author.display_avatar)
         embed.set_author(name="Hanabi Bot")
-        embed.add_field(name=f'{before.author.name} deleted a message.', value='')
+        embed.add_field(name=f'{before.author.name} deleted a message.', value='', inline=False)
         embed.add_field(name=f'Old Message:', value=f'{before.content}', inline=False)
 
         await self.bot.get_channel(self.general_logs).send(embed=embed)
