@@ -16,7 +16,7 @@ class SystemCommands(commands.Cog):
         self.guild_id = int(os.environ.get('GUILD_ID'))
         self.invites = []
         
-    def find_invite_by_code(self, invite_list: list, code: discord.Invite.code) -> discord.Invite:
+    def find_invite_by_code(self, invite_list: list[discord.Invite], code: str) -> discord.Invite:
         for inv in invite_list:
             if inv.code == code:
                 return inv
@@ -141,6 +141,9 @@ class SystemCommands(commands.Cog):
         
     @commands.Cog.listener()
     async def on_message_edit(self, before: discord.Message, after: discord.Message):
+        if after.author.bot:
+            return
+        
         embed = discord.Embed(
             title="Message Editted",
             colour=discord.Colour.light_grey(),
@@ -157,6 +160,9 @@ class SystemCommands(commands.Cog):
         
     @commands.Cog.listener()
     async def on_message_delete(self, before: discord.Message):
+        if before.author.bot:
+            return
+        
         embed = discord.Embed(
             title="Message Deleted",
             colour=discord.Colour.light_grey(),
@@ -171,7 +177,7 @@ class SystemCommands(commands.Cog):
         await self.bot.get_channel(self.general_logs).send(embed=embed)
     
 
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(SystemCommands(bot))
     
 
