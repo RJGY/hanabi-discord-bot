@@ -33,6 +33,20 @@ class User():
     def __str__(self) -> str:
         return f'ID: {self.id}, Invite Code: {self.invite_code}, Ban Count: {self.ban_count}, Kick Count: {self.kick_count}, Timeout Count: {self.timeout_count}, Has Been Banned Before: {self.has_been_banned}, ' + \
                     f'Role: {self.role}, Message Count: {self.message_count}'
+                    
+class Role():
+    def __init__(self, args):
+        if len(args) != 6:
+            return
+        self.id = args[0]
+        self.role_id = args[1]
+        self.user_id = args[2]
+        self.expiry_time = dt.datetime.strptime(args[3], f'%Y-%m-%d %H:%M:%S.%f%z')
+        self.reason = args[4]
+        self.created_by = args[5]
+        
+    def __str__(self) -> str:
+        return f'ID: {self.id}, Role ID: {self.role_id}, User ID: {self.user_id}, Expiry Time: {self.expiry_time}, Reason: {self.reason}, Created By: {self.created_by}'
 
 class Database():
     def __init__(self):
@@ -89,14 +103,14 @@ class Database():
             cursor.execute("INSERT INTO schema_log DEFAULT VALUES")
         self.database.commit()
         
-    def check_user_exists(self, id: int):
+    def check_user_exists(self, id: int) -> Optional[list]:
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
         cursor = self.database.cursor()
         cursor.execute(f'SELECT * FROM users WHERE id = {id}')
         return cursor.fetchone()
     
-    def check_has_init_user_table(self):
+    def check_has_init_user_table(self) -> bool:
         """Only needed to run once when bot is first started and there are already users in the server."""
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
@@ -152,6 +166,25 @@ class Database():
         cursor.execute(f'SELECT kick_count FROM users WHERE id = {id}')
         kick_count = int(cursor.fetchone()[0]) + 1
         self.database.execute(f'UPDATE users SET kick_count = {kick_count} WHERE id = {id};')
+        self.database.commit()
+        
+    def delete_role_row(self, id):
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        self.database.execute(f'DELETE FROM temp_roles WHERE id = {id};')
+        self.database.commit()
+        
+    def get_all_roles(self) -> list:
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        cursor = self.database.cursor()
+        cursor.execute(f'SELECT * FROM temp_roles')
+        return cursor.fetchall()
+        
+    def clear_user_punishment_history(self, id):
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        self.database.execute(f'UPDATE users SET kick_count = 0, timeout_count = 0, ban_count = 0 WHERE id = {id};')
         self.database.commit()
         
 class Pastebin:
@@ -222,6 +255,11 @@ class ModerationCommands(commands.Cog):
         self.invites = []
         self.db = Database()
         self.pastebin = Pastebin()
+        self.index = 0
+        
+    """Listeners"""
+    def cog_unload(self):
+        self.role_task.cancel()
         
     @commands.Cog.listener()
     async def on_ready(self):
@@ -230,6 +268,9 @@ class ModerationCommands(commands.Cog):
         await self.init_users()
         self.invites = await self.bot.get_guild(self.guild_id).invites()
         logging.info("Loaded mod commands.")
+        self.role_task.start()
+        
+    """Helper Functions"""
         
     def find_invite_by_code(self, invite_list: list[discord.Invite], code: str) -> discord.Invite:
         for inv in invite_list:
@@ -247,7 +288,6 @@ class ModerationCommands(commands.Cog):
             return dt.datetime.now().astimezone() + dt.timedelta(days=1)
         elif duration in hour:
             return dt.datetime.now().astimezone() + dt.timedelta(hours=1)
-        return dt.datetime(2100, 1,1).astimezone()
             
     async def init_users(self):
         guild = self.bot.get_guild(self.guild_id)
@@ -288,6 +328,38 @@ class ModerationCommands(commands.Cog):
         embed.set_author(name="Hanabi Bot")
         embed.add_field(name=f'{command.author} (ID: {command.author.id}) attempted to exeucte {command.message.content} in {command.channel}', value='Failed Reason: No Permission', inline=False)
         await self.bot.get_channel(self.staff_logs).send(embed=embed)
+        
+    """Tasks"""
+    
+    @tasks.loop(seconds=60.0)
+    async def role_task(self):
+        logging.debug("Scanning for roles...")
+        roles = self.db.get_all_roles()
+        for role in roles:
+            role_obj = Role(role)
+            if role_obj.expiry_time < dt.datetime.now().astimezone():
+                discord_role = self.bot.get_guild(self.guild_id).get_role(role_obj.role_id)
+                await self.bot.get_guild(self.guild_id).get_member(role_obj.user_id).remove_roles(discord_role, reason="Role timed out")
+                user = self.bot.get_guild(self.guild_id).get_member(role_obj.user_id)
+                embed = discord.Embed(
+                    title="Role Removed",
+                    colour=discord.Colour.green(),
+                    timestamp=dt.datetime.now()
+                )
+                embed.set_thumbnail(url=user.display_avatar)
+                embed.set_author(name="Hanabi Bot")
+                embed.add_field(name=f'{user.display_name} (ID: {user.id}) Role was removed', value='Role timed out', inline=False)
+                await self.bot.get_channel(self.staff_logs).send(embed=embed)
+                self.db.delete_role_row(role_obj.id)
+                
+        
+    
+    @role_task.before_loop
+    async def before_role_task(self):
+        logging.info('Waiting...')
+        await self.bot.wait_until_ready()
+    
+    """Commands"""
         
     @commands.command(name="info")
     async def info_command(self, ctx: commands.Context, person: str):
@@ -370,7 +442,7 @@ class ModerationCommands(commands.Cog):
         if user_role > target_role and user_role > 0:
             date = self.get_duration(duration)
             today = dt.datetime.now().astimezone()
-            if (date - today).days > 27:
+            if not date or (date - today).days > 28:
                 date = dt.datetime.now().astimezone() + dt.timedelta(days=28)
             await member.edit(timed_out_until=date, reason=reason)
             await ctx.invoke(self.on_command_success)
@@ -595,17 +667,41 @@ class ModerationCommands(commands.Cog):
             return
         
         if "<@" in role:
-            role = ctx.guild.get_role(int(role[2:-1]))
+            member_role = ctx.guild.get_role(int(role[2:-1]))
         else:
-            role = ctx.guild.get_role(role)
+            member_role = ctx.guild.get_role(role)
             
-        date = self.get_duration(duration)
+        if not member_role:
+            return
         
+        if member_role.id == self.admin_role_id:
+            return
+        
+        member.add_roles(member_role, reason=reason)
+        expiry_date = self.get_duration(duration)
+        
+        if expiry_date:
+            self.db.new_temp_role(member.id, member_role.id, expiry_date, reason, ctx.author.id)
             
+        embed = discord.Embed(
+            title="Successfully Updated User's Roles",
+            colour=discord.Colour.blue(),
+            timestamp=dt.datetime.now()
+        )
+        embed.set_thumbnail(url=member.display_avatar)
+        embed.set_author(name="Hanabi Bot")
+        embed.add_field(name=f'Role Added:', value=f'{member_role.name}', inline=False)
+        if not expiry_date:
+            embed.add_field(name=f'Duration:', value=f'N/A', inline=False)
+        else:
+            embed.add_field(name=f'Duration:', value=f'{expiry_date}', inline=False)
+        embed.add_field(name=f'Reason:', value=f'{reason}', inline=False)
+        embed.set_footer(text=f'{ctx.author}')
+        await ctx.reply(embed=embed)
             
     
     @commands.command(name="removerole")
-    async def removerole_command(self, ctx: commands.Context, person: str, role: str, duration: Optional[str]=None, reason: Optional[str]=None):
+    async def removerole_command(self, ctx: commands.Context, person: str, role: str, reason: Optional[str]=None):
         if not person:
             return
         
@@ -621,9 +717,108 @@ class ModerationCommands(commands.Cog):
             
         if not member:
             return
+        
+        if "<@" in role:
+            member_role = ctx.guild.get_role(int(role[2:-1]))
+        else:
+            member_role = ctx.guild.get_role(role)
+            
+        if not member_role:
+            return
+        
+        if member_role.id == self.admin_role_id:
+            return
+        
+        member.remove_roles(member_role, reason=reason)
+        embed = discord.Embed(
+            title="Successfully Updated User's Roles",
+            colour=discord.Colour.blue(),
+            timestamp=dt.datetime.now()
+        )
+        embed.set_thumbnail(url=member.display_avatar)
+        embed.set_author(name="Hanabi Bot")
+        embed.add_field(name=f'Role Removed:', value=f'{member_role.name}', inline=False)
+        embed.add_field(name=f'Reason:', value=f'{reason}', inline=False)
+        embed.set_footer(text=f'{ctx.author}')
+        await ctx.reply(embed=embed)
     
+    @commands.command(name="clear")
+    async def clear_command(self, ctx: commands.Context, person: str):
+        if not person:
+            return
+        if "<@" in person:
+            member = ctx.guild.get_member(int(person[2:-1]))
+        else:
+            member = ctx.guild.get_member(person)
+            
+        if not member:
+            return
+        self.db.clear_user_punishment_history(member.id)
+        embed = discord.Embed(
+            title="Successfully Cleared User's Punishment History",
+            colour=discord.Colour.blue(),
+            timestamp=dt.datetime.now()
+        )
+        embed.set_thumbnail(url=member.display_avatar)
+        embed.set_author(name="Hanabi Bot")
+        embed.add_field(name=f'Punishment history removed from: {member.display_name}', value=f'', inline=False)
+        embed.set_footer(text=f'{ctx.author}')
+        await ctx.reply(embed=embed)
     
+    @commands.command(name="purge")
+    async def purge_command(self, ctx: commands.Context, multi: str):
+        if "<#" in multi:
+            channel = int(multi[2:-1])
+            target_channel = ctx.guild.get_channel(channel)
+            
+            if not target_channel:
+                return
+            deleted = await target_channel.purge(limit=None)
+            embed = discord.Embed(
+                title="Successfully Purged Channel",
+                colour=discord.Colour.blue(),
+                timestamp=dt.datetime.now()
+            )
+            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_author(name="Hanabi Bot")
+            embed.add_field(name=f'Removed items from channel: #{target_channel.name}', value=f'Total - {len(deleted)}', inline=False)
+            embed.set_footer(text=f'{ctx.author}')
+            await ctx.send(embed=embed)
+            
+        else:
+            member = ctx.guild.get_member(int(multi[2:-1]))
+            if not member:
+                return
+            channels = [discordchannel for discordchannel in ctx.guild.channels if str(discordchannel.type) == 'text']
+            deleted_messages = dict()
+            total_messages = 0
+            for discord_channel in channels:
+                deleted = await discord_channel.purge(limit=None, check=lambda message: message.author == member)
+                deleted_messages[discord_channel.name] = len(deleted)
+                total_messages += len(deleted)
+            
+            embed = discord.Embed(
+                title="Successfully Purged Channel",
+                colour=discord.Colour.blue(),
+                timestamp=dt.datetime.now()
+            )
+            
+            embed.set_thumbnail(url=member.display_avatar)
+            embed.set_author(name="Hanabi Bot")
+            if len(deleted_messages) < 9:
+                for key, value in deleted_messages.items():
+                    embed.add_field(name=f'#{key} - {value} messages', value=f'')
+            embed.add_field(name=f'Total - {total_messages} Messages', value=f'')
+            embed.set_footer(text=f'{ctx.author}')
+            await ctx.send(embed=embed)
+                
+    @commands.command(name="reset")
+    async def reset_command(self, ctx: commands.Context, channel: str):
+        pass
     
+    @commands.command(name="lock")
+    async def lock_command(self, ctx: commands.Context, channel: str):
+        pass
     
 async def setup(bot: commands.Bot):
     await bot.add_cog(ModerationCommands(bot))
@@ -639,7 +834,8 @@ def test_db():
     db.add_message_count(124)
     db.has_init_all_users()
     print(db.check_has_init_user_table())
-    db.new_temp_role(124, -1, str(dt.datetime.now().astimezone()), "balls", -1)
+    db.new_temp_role(150124453815255040, 1226467615229345825, str(dt.datetime.now().astimezone()), "balls", 150124453815255040)
+    db.clear_user_punishment_history(124)
     
     
 def test_pastebin_api():

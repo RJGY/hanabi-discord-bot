@@ -82,7 +82,6 @@ class SystemCommands(commands.Cog):
                 roles_string = ", ".join(roles_list)
                 embed.add_field(name=f'Removed roles:', value=roles_string, inline=False)
             # TODO: Method should be either through bot or Manual if done via discord.
-            embed.add_field(name=f'Method: Manual', value='')
             await self.bot.get_channel(self.general_logs).send(embed=embed)
             
     @commands.Cog.listener()
