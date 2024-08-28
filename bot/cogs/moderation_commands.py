@@ -4,13 +4,9 @@ import datetime as dt
 import os
 from dotenv import load_dotenv
 import logging
-import sqlite3
 from typing import Optional
 import requests
-from ..model import User
-from ..model import Role
-from ..model import LockedChannel
-from ..model import Database
+from ..model import *
 
 load_dotenv()
 
@@ -96,6 +92,7 @@ class ModerationCommands(commands.Cog):
     """Listeners"""
     def cog_unload(self):
         self.role_task.cancel()
+        self.channel_task.cancel()
         
     @commands.Cog.listener()
     async def on_ready(self):
@@ -236,12 +233,12 @@ class ModerationCommands(commands.Cog):
     
     @role_task.before_loop
     async def before_role_task(self):
-        logging.info('Waiting...')
+        logging.info('Waiting for role task...')
         await self.bot.wait_until_ready()
         
     @channel_task.before_loop
     async def before_channel_task(self):
-        logging.info('Waiting...')
+        logging.info('Waiting for channel task...')
         await self.bot.wait_until_ready()
         
     """Listeners"""
@@ -616,6 +613,15 @@ class ModerationCommands(commands.Cog):
         messages = [message async for message in target_channel.history(limit=None, oldest_first=True) if message.author.id == member.id]
         
         if len(messages) < 1:
+            embed = discord.Embed(
+                title="Failed to execute history command.",
+                colour=discord.Colour.dark_blue(),
+                timestamp=dt.datetime.now()
+            )
+            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_author(name="Hanabi Bot")
+            embed.add_field(name=f'Reason: No messages sent.', value='', inline=False)
+            embed.set_footer(text=f'{ctx.author}')
             return
         
         await ctx.invoke(self.on_command_success)
@@ -652,6 +658,15 @@ class ModerationCommands(commands.Cog):
             silent = True
         
         if not person:
+            embed = discord.Embed(
+                title="Failed to execute addrole command.",
+                colour=discord.Colour.dark_blue(),
+                timestamp=dt.datetime.now()
+            )
+            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_author(name="Hanabi Bot")
+            embed.add_field(name=f'Reason: Incorrect arguements.', value='', inline=False)
+            embed.set_footer(text=f'{ctx.author}')
             return
         
         user_role = User(self.db.check_user_exists(ctx.author.id)).role
@@ -661,7 +676,7 @@ class ModerationCommands(commands.Cog):
             if silent:
                 return
             embed = discord.Embed(
-                title="Failed to add role command.",
+                title="Failed to execute add role command.",
                 colour=discord.Colour.dark_blue(),
                 timestamp=dt.datetime.now()
             )
@@ -682,7 +697,7 @@ class ModerationCommands(commands.Cog):
             return
         
         if "<@" in role:
-            member_role = ctx.guild.get_role(int(role[2:-1]))
+            member_role = ctx.guild.get_role(int(role[3:-1]))
         else:
             member_role = ctx.guild.get_role(role)
             
@@ -692,7 +707,10 @@ class ModerationCommands(commands.Cog):
         if member_role.id == self.admin_role_id:
             return
         
-        member.add_roles(member_role, reason=reason)
+        if not reason:
+            reason = f'Added by {ctx.author}'
+        
+        await ctx.author.add_roles(member_role, reason=reason)
         expiry_date = self.get_duration(duration)
         
         if expiry_date:
@@ -734,7 +752,7 @@ class ModerationCommands(commands.Cog):
             if silent: 
                 return
             embed = discord.Embed(
-                title="Failed to remove role command.",
+                title="Failed to execute remove role command.",
                 colour=discord.Colour.dark_blue(),
                 timestamp=dt.datetime.now()
             )
@@ -755,7 +773,7 @@ class ModerationCommands(commands.Cog):
             return
         
         if "<@" in role:
-            member_role = ctx.guild.get_role(int(role[2:-1]))
+            member_role = ctx.guild.get_role(int(role[3:-1]))
         else:
             member_role = ctx.guild.get_role(role)
             
@@ -765,7 +783,10 @@ class ModerationCommands(commands.Cog):
         if member_role.id == self.admin_role_id:
             return
         
-        member.remove_roles(member_role, reason=reason)
+        if not reason:
+            reason = f'Removed by {ctx.author}'
+            
+        await member.remove_roles(member_role, reason=reason)
         
         if silent: 
             return
@@ -873,46 +894,6 @@ class ModerationCommands(commands.Cog):
             embed.add_field(name=f'Total - {total_messages} messages', value=f'')
             embed.set_footer(text=f'{ctx.author}')
             await ctx.send(embed=embed)
-                
-    @commands.command(name="reset")
-    async def reset_command(self, ctx: commands.Context, channel: str, silent: Optional[str]=None):
-        """ this is incorrect but leave for now """
-        if silent == "-s":
-            silent = True
-            
-        if "<#" in channel:
-            channel = int(channel[2:-1])
-        target_channel = ctx.guild.get_channel(channel)
-        
-        if not target_channel:
-            return
-        
-        overwrite = target_channel.overwrites_for(ctx.guild.default_role)
-        overwrite.send_messages = True
-        await target_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
-        
-        deleted = await target_channel.purge(limit=None)
-        
-        # delete db record here
-        locked_channel = LockedChannel(self.db.check_locked_channel_exists(target_channel.id))
-        if locked_channel:
-            self.db.delete_locked_channel(locked_channel.id)
-            
-        if silent:
-            return
-        
-        embed = discord.Embed(
-            title="Successfully Reset Channel",
-            colour=discord.Colour.blue(),
-            timestamp=dt.datetime.now()
-        )
-        
-        embed.set_thumbnail(url=ctx.author.display_avatar)
-        embed.set_author(name="Hanabi Bot")
-        embed.add_field(name=f'Reset channel #{target_channel.name}', value=f'', inline=False)
-        embed.add_field(name=f'Removed items from channel: #{target_channel.name}', value=f'Total - {len(deleted)}', inline=False)
-        embed.set_footer(text=f'{ctx.author}')
-        await ctx.send(embed=embed)
             
     
     @commands.command(name="lock")
