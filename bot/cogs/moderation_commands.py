@@ -92,7 +92,7 @@ class ModerationCommands(commands.Cog):
     """Listeners"""
     def cog_unload(self):
         self.role_task.cancel()
-        self.channel_task.cancel()
+        self.locked_channel_task.cancel()
         
     @commands.Cog.listener()
     async def on_ready(self):
@@ -102,7 +102,7 @@ class ModerationCommands(commands.Cog):
         self.invites = await self.bot.get_guild(self.guild_id).invites()
         logging.info("Loaded mod commands.")
         self.role_task.start()
-        self.channel_task.start()
+        self.locked_channel_task.start()
         
     """Helper Functions"""
         
@@ -140,7 +140,7 @@ class ModerationCommands(commands.Cog):
         guild = self.bot.get_guild(self.guild_id)
         
         for member in guild.members:
-            if not self.db.check_user_exists(member.id):
+            if not self.db.get_user(member.id):
                 self.db.new_user(member.id, "N/A", 0)
             role_ids = [role.id for role in member.roles]
             role = 0
@@ -180,7 +180,7 @@ class ModerationCommands(commands.Cog):
     
     @tasks.loop(seconds=60.0)
     async def role_task(self):
-        logging.debug("Scanning for roles...")
+        logging.debug("Scanning for temporary roles...")
         roles = self.db.get_all_roles()
         for role in roles:
             role_obj = Role(role)
@@ -206,9 +206,9 @@ class ModerationCommands(commands.Cog):
                 
                 
     @tasks.loop(seconds=60.0)
-    async def channel_task(self):
-        logging.debug("Scanning for channels...")
-        channels = self.db.get_all_channels()
+    async def locked_channel_task(self):
+        logging.debug("Scanning for locked channels...")
+        channels = self.db.get_all_locked_channels()
         for channel in channels:
             channel_obj = LockedChannel(channel)
             if channel_obj.expiry_time < dt.datetime.now().astimezone():
@@ -236,7 +236,7 @@ class ModerationCommands(commands.Cog):
         logging.info('Waiting for role task...')
         await self.bot.wait_until_ready()
         
-    @channel_task.before_loop
+    @locked_channel_task.before_loop
     async def before_channel_task(self):
         logging.info('Waiting for channel task...')
         await self.bot.wait_until_ready()
@@ -266,7 +266,7 @@ class ModerationCommands(commands.Cog):
         
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):   
-        if self.db.check_user_exists(message.author.id):
+        if self.db.get_user(message.author.id):
             self.db.add_message_count(message.author.id)
             
     """Commands"""
@@ -282,10 +282,10 @@ class ModerationCommands(commands.Cog):
         else:
             member = ctx.guild.get_member(person)
         
-        if not self.db.check_user_exists(member.id):
+        if not self.db.get_user(member.id):
             self.db.new_user(member.id, "N/A", 0)
         
-        db_data = self.db.check_user_exists(member.id)
+        db_data = self.db.get_user(member.id)
         user = User(db_data)
         
         embed = discord.Embed(
@@ -328,8 +328,8 @@ class ModerationCommands(commands.Cog):
         else:
             member = ctx.guild.get_member(person)
         
-        target_role = User(self.db.check_user_exists(member.id)).role
-        user_role = User(self.db.check_user_exists(ctx.author.id)).role
+        target_role = User(self.db.get_user(member.id)).role
+        user_role = User(self.db.get_user(ctx.author.id)).role
         if user_role > target_role and user_role > 0:
             date = self.get_duration(duration)
             today = dt.datetime.now().astimezone()
@@ -384,8 +384,8 @@ class ModerationCommands(commands.Cog):
         else:
             member = ctx.guild.get_member(person)
             
-        target_role = User(self.db.check_user_exists(member.id)).role
-        user_role = User(self.db.check_user_exists(ctx.author.id)).role
+        target_role = User(self.db.get_user(member.id)).role
+        user_role = User(self.db.get_user(ctx.author.id)).role
         is_timed_out = member.is_timed_out()
         if user_role > target_role and is_timed_out and user_role > 0:
             await member.timeout(None, reason=reason)
@@ -435,8 +435,8 @@ class ModerationCommands(commands.Cog):
         else:
             member = ctx.guild.get_member(person)
             
-        target_role = User(self.db.check_user_exists(member.id)).role
-        user_role = User(self.db.check_user_exists(ctx.author.id)).role
+        target_role = User(self.db.get_user(member.id)).role
+        user_role = User(self.db.get_user(ctx.author.id)).role
         if user_role > target_role and user_role > 0:
             await member.kick(reason=reason)
             await ctx.invoke(self.on_command_success)
@@ -486,8 +486,8 @@ class ModerationCommands(commands.Cog):
         else:
             member = ctx.guild.get_member(person)
             
-        target_role = User(self.db.check_user_exists(member.id)).role
-        user_role = User(self.db.check_user_exists(ctx.author.id)).role
+        target_role = User(self.db.get_user(member.id)).role
+        user_role = User(self.db.get_user(ctx.author.id)).role
         if user_role > target_role and user_role > 0:
             await member.ban(reason=reason)
             await ctx.invoke(self.on_command_success)
@@ -537,7 +537,7 @@ class ModerationCommands(commands.Cog):
         else:
             member = ctx.guild.get_member(person)
             
-        user_role = User(self.db.check_user_exists(ctx.author.id)).role
+        user_role = User(self.db.get_user(ctx.author.id)).role
         if user_role > 0:
             await member.unban(reason=reason)
             await ctx.invoke(self.on_command_success)
@@ -569,7 +569,7 @@ class ModerationCommands(commands.Cog):
         if not person:
             return
         
-        user_role = User(self.db.check_user_exists(ctx.author.id)).role
+        user_role = User(self.db.get_user(ctx.author.id)).role
         if user_role < 2:
             if silent:
                 return
@@ -669,7 +669,7 @@ class ModerationCommands(commands.Cog):
             embed.set_footer(text=f'{ctx.author}')
             return
         
-        user_role = User(self.db.check_user_exists(ctx.author.id)).role
+        user_role = User(self.db.get_user(ctx.author.id)).role
         
         # Only admins can use this command
         if user_role < 2:
@@ -747,7 +747,7 @@ class ModerationCommands(commands.Cog):
         if not person:
             return
         
-        user_role = User(self.db.check_user_exists(ctx.author.id)).role
+        user_role = User(self.db.get_user(ctx.author.id)).role
         if user_role < 2:
             if silent: 
                 return
@@ -948,7 +948,7 @@ class ModerationCommands(commands.Cog):
         overwrite.send_messages = True
         await target_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
         
-        locked_channel = LockedChannel(self.db.check_locked_channel_exists(target_channel.id))
+        locked_channel = LockedChannel(self.db.get_locked_channel(target_channel.id))
         if locked_channel:
             self.db.delete_locked_channel(locked_channel.id)
         

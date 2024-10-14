@@ -15,9 +15,11 @@ class Database():
         """
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        self.database.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY NOT NULL, invite_code TEXT DEFAULT NULL, ban_count INTEGER DEFAULT 0 NOT NULL, kick_count INTEGER DEFAULT 0 NOT NULL, timeout_count INTEGER DEFAULT 0 NOT NULL, has_been_banned INTEGER DEFAULT 0 NOT NULL, role INTEGER DEFAULT 0 NOT NULL, message_count INTEGER DEFAULT 0 NOT NULL );')
+        self.database.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER DEFAULT NULL, invite_code TEXT DEFAULT NULL, ban_count INTEGER DEFAULT 0 NOT NULL, kick_count INTEGER DEFAULT 0 NOT NULL, timeout_count INTEGER DEFAULT 0 NOT NULL, has_been_banned INTEGER DEFAULT 0 NOT NULL, role INTEGER DEFAULT 0 NOT NULL, message_count INTEGER DEFAULT 0 NOT NULL );')
         self.database.execute('CREATE TABLE IF NOT EXISTS temp_roles (id INTEGER PRIMARY KEY AUTOINCREMENT, role_id INTEGER DEFAULT NULL, user_id INTEGER NOT NULL, expiry_time TEXT DEFAULT NULL, reason TEXT DEFAULT NULL, created_by INTEGER DEFAULT NULL);')
         self.database.execute('CREATE TABLE IF NOT EXISTS locked_channels (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id INTEGER DEFAULT NULL, expiry_time TEXT DEFAULT NULL, reason TEXT DEFAULT NULL, created_by INTEGER DEFAULT NULL)')
+        self.database.execute('CREATE TABLE IF NOT EXISTS saved_servers (id INTEGER PRIMARY KEY AUTOINCREMENT, server_id INTEGER DEFAULT NULL, save_name TEXT DEFAULT NULL)')
+        self.database.execute('CREATE TABLE IF NOT EXISTS saved_channels (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id INTEGER DEFAULT NULL, save_name TEXT DEFAULT NULL, saved_server_id INTEGER DEFAULT NULL, channel_name TEXT DEFAULT NULL, type INTEGER DEFAULT NULL, position INTEGER DEFAULT NULL, parent INTEGER DEFAULT NULL, permissions TEXT DEFAULT NULL)')
         self.database.commit()
         
     def init_schema_log(self):
@@ -35,7 +37,7 @@ class Database():
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
         
-        self.database.execute('CREATE TABLE IF NOT EXISTS schema_log (has_init_users INTEGER DEFAULT 0);')
+        self.database.execute('CREATE TABLE IF NOT EXISTS schema_log (has_init_users INTEGER DEFAULT 0, in_maintenance_mode INTEGER DEFAULT 0);')
         cursor = self.database.cursor()
         cursor.execute("SELECT COUNT(*) FROM schema_log")
         row_count = cursor.fetchone()[0]
@@ -47,47 +49,78 @@ class Database():
         
     """Create object on table"""
         
-    def new_user(self, id: int, invite_code: str, role: int):
+    def new_user(self, user_id: int, invite_code: str, role: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        if self.check_user_exists(id):
+        if self.get_user(user_id):
             return
-        self.database.execute(f'INSERT INTO users (id, invite_code, role) VALUES (?, ?, ? );', (id, invite_code, role))
+        self.database.execute(f'INSERT INTO users (user_id, invite_code, role) VALUES (?, ?, ? );', (user_id, invite_code, role))
         self.database.commit()
+        return self.get_user(user_id)
         
     def new_temp_role(self, user_id: int, role_id: int, expiry_time: str, reason: str, created_by: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
         self.database.execute(f'INSERT INTO temp_roles (role_id, user_id, expiry_time, reason, created_by) VALUES (?, ?, ?, ?, ?);', (role_id, user_id, expiry_time, reason, created_by))
         self.database.commit()
+        return self.get_role(role_id, user_id)
         
     def new_locked_channel(self, channel_id: int, expiry_time: str, reason: str, created_by: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
         self.database.execute(f'INSERT INTO locked_channels (channel_id, expiry_time, reason, created_by) VALUES (?, ?, ?, ?);', (channel_id, expiry_time, reason, created_by))
         self.database.commit()
+        return self.get_locked_channel(channel_id)
+        
+    def new_saved_server(self, server_id: int, save_name: str):
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        self.database.execute(f'INSERT INTO saved_servers (server_id, save_name) VALUES (?, ?);', (server_id, save_name))
+        self.database.commit()
+        return self.get_saved_server(server_id, save_name)
+        
+    def new_saved_channel(self, channel_id: int, save_name: str, saved_server_id: int, channel_name: str, type: int, position: int, parent: int, permissions: str):
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        self.database.execute(f'INSERT INTO saved_channels (channel_id, save_name, saved_server_id, channel_name, type, position, parent, permissions) VALUES (?, ?, ?, ?, ?, ?, ?, ?);', (channel_id, save_name, saved_server_id, channel_name, type, position, parent, permissions))
+        self.database.commit()
+        return self.get_saved_channel(channel_id, save_name)
         
     """Check object exists"""
         
-    def check_user_exists(self, id: int) -> Optional[list]:
+    def get_user(self, user_id: int) -> Optional[list]:
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
         cursor = self.database.cursor()
-        cursor.execute(f'SELECT * FROM users WHERE id = {id}')
+        cursor.execute(f'SELECT * FROM users WHERE id = {user_id}')
         return cursor.fetchone()
     
-    def check_locked_channel_exists(self, channel_id: int) -> Optional[list]:
+    def get_locked_channel(self, channel_id: int) -> Optional[list]:
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
         cursor = self.database.cursor()
         cursor.execute(f'SELECT * FROM locked_channels WHERE channel_id = {channel_id}')
         return cursor.fetchone()
     
-    def check_role_exists(self, role_id: int, user_id: int):
+    def get_role(self, role_id: int, user_id: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
         cursor = self.database.cursor()
         cursor.execute(f'SELECT * FROM temp_roles WHERE role_id = {role_id} and user_id = {user_id}')
+        return cursor.fetchone()
+    
+    def get_saved_server(self, server_id: int, save_name: str) -> Optional[list]:
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        cursor = self.database.cursor()
+        cursor.execute(f'SELECT * FROM saved_servers WHERE server_id = {server_id} and save_name = "{save_name}"')
+        return cursor.fetchone()
+    
+    def get_saved_channel(self, channel_id: int, save_name: str) -> Optional[list]:
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        cursor = self.database.cursor()
+        cursor.execute(f'SELECT * FROM saved_channels WHERE channel_id = {channel_id} and save_name = "{save_name}"')
         return cursor.fetchone()
     
     def check_has_init_user_table(self) -> bool:
@@ -98,19 +131,19 @@ class Database():
         cursor.execute("SELECT has_init_users FROM schema_log")
         return bool(cursor.fetchone()[0])
     
-    def has_init_all_users(self):
+    def check_maintenance_mode(self) -> bool:
         if not self.database:
-            self.database = sqlite3.connect('database/hanabi_bot.db')
-        self.database.execute(f'UPDATE schema_log SET has_init_users = 1;')
-        self.database.commit()
-        
-        
-    """Add to object"""
+            self.database = sqlite3.connect('dataase/hanabi_bot.db')
+        cursor = self.database.cursor()
+        cursor.execute("SELECT in_maintenance_mode FROM schema_log")
+        return bool(cursor.fetchone()[0])
+    
+    """Update objects"""
         
     def add_message_count(self, id: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        if not self.check_user_exists(id):
+        if not self.get_user(id):
             return
         cursor = self.database.cursor()
         cursor.execute(f'SELECT message_count FROM users WHERE id = {id}')
@@ -121,7 +154,7 @@ class Database():
     def add_timeout_count(self, id: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        if not self.check_user_exists(id):
+        if not self.get_user(id):
             return
         cursor = self.database.cursor()
         cursor.execute(f'SELECT timeout_count FROM users WHERE id = {id}')
@@ -132,7 +165,7 @@ class Database():
     def add_ban_count(self, id: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        if not self.check_user_exists(id):
+        if not self.get_user(id):
             return
         cursor = self.database.cursor()
         cursor.execute(f'SELECT ban_count FROM users WHERE id = {id}')
@@ -143,7 +176,7 @@ class Database():
     def add_kick_count(self, id: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        if not self.check_user_exists(id):
+        if not self.get_user(id):
             return
         cursor = self.database.cursor()
         cursor.execute(f'SELECT kick_count FROM users WHERE id = {id}')
@@ -154,9 +187,27 @@ class Database():
     def set_user_id(self, id: int, role: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        if not self.check_user_exists(id):
+        if not self.get_user(id):
             return
         self.database.execute(f'UPDATE users SET role = {role} WHERE id = {id};')
+        self.database.commit()
+        
+    def clear_user_punishment_history(self, id):
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        self.database.execute(f'UPDATE users SET kick_count = 0, timeout_count = 0, ban_count = 0 WHERE id = {id};')
+        self.database.commit()
+        
+    def has_init_all_users(self):
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        self.database.execute(f'UPDATE schema_log SET has_init_users = 1;')
+        self.database.commit()
+        
+    def set_maintenance_mode(self, mode: bool):
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        self.database.execute(f'UPDATE schema_log SET in_maintenance_mode = {int(mode)};')
         self.database.commit()
         
     """Delete object from table"""
@@ -172,6 +223,31 @@ class Database():
             self.database = sqlite3.connect('database/hanabi_bot.db')
         self.database.execute(f'DELETE FROM locked_channels WHERE id = {id};')
         self.database.commit()
+        
+    def delete_saved_server(self, id):
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        self.database.execute(f'DELETE FROM saved_servers WHERE id = {id};')
+        self.database.commit()
+        
+    def delete_saved_channel(self, id):
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        self.database.execute(f'DELETE FROM saved_channels WHERE id = {id};')
+        self.database.commit()
+        
+    def delete_all_locked_channels(self):
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        self.database.execute(f'DELETE FROM locked_channels;')
+        self.database.commit()
+        
+    def delete_all_saved_channels_with_name(self, name):
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        self.database.execute(f'DELETE FROM saved_channels WHERE save_name = "{name}";')
+        self.database.execute(f'DELETE FROM saved_servers WHERE save_name = "{name}";')
+        self.database.commit()
     
     """Get all from table"""    
     
@@ -182,15 +258,39 @@ class Database():
         cursor.execute(f'SELECT * FROM temp_roles')
         return cursor.fetchall()
     
-    def get_all_channels(self) -> list:
+    def get_all_locked_channels(self) -> list:
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
         cursor = self.database.cursor()
         cursor.execute(f'SELECT * FROM locked_channels')
         return cursor.fetchall()
-        
-    def clear_user_punishment_history(self, id):
+    
+    def get_all_servers(self) -> list:
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        self.database.execute(f'UPDATE users SET kick_count = 0, timeout_count = 0, ban_count = 0 WHERE id = {id};')
-        self.database.commit()
+        cursor = self.database.cursor()
+        cursor.execute(f'SELECT * FROM saved_servers')
+        return cursor.fetchall()
+    
+    def get_all_channels(self) -> list:
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        cursor = self.database.cursor()
+        cursor.execute(f'SELECT * FROM saved_channels')
+        return cursor.fetchall()
+    
+    def get_all_channels_from_server_and_name(self, saved_server_id: int, save_name: str) -> list:
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        cursor = self.database.cursor()
+        cursor.execute(f'SELECT * FROM saved_channels WHERE saved_server_id = {saved_server_id} and save_name = "{save_name}"')
+        return cursor.fetchall()
+    
+    def get_channels_from_id(self, channel_id: int) -> list:
+        """Returns all saved channels with a given channel_id."""
+        if not self.database:
+            self.database = sqlite3.connect('database/hanabi_bot.db')
+        cursor = self.database.cursor()
+        cursor.execute(f'SELECT * FROM saved_channels WHERE channel_id = {channel_id}')
+        return cursor.fetchall()
+    
