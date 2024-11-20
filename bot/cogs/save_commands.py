@@ -47,6 +47,7 @@ class SaveCommands(commands.Cog):
         
     """Helper Functions"""
         
+        
     """Tasks"""
     
         
@@ -54,25 +55,24 @@ class SaveCommands(commands.Cog):
                 
             
     """Commands"""
-    @commands.command(name="reset")
-    async def reset_command(self, ctx: commands.Context, channel: str, name: Optional[str]=None):
-        if "<#" in channel:
-            channel = int(channel[2:-1])
-        
+    @discord.app_commands.command(name="reset", description="Resets a channel based on the saved name.")
+    @discord.app_commands.describe(channel="The channel to reset.")
+    @discord.app_commands.describe(name="The name of the save.")
+    async def reset_command(self, interaction: discord.Interaction, name: str, channel: Optional[discord.TextChannel]=None):
         if name:
             saved_channel = SavedChannel(self.db.get_saved_channel(channel, name))
             if not saved_channel:
                 embed = discord.Embed(
-                title="Could not reset channel",
-                colour=discord.Colour.blue(),
-                timestamp=dt.datetime.now()
-            )
+                    title="Could not reset channel",
+                    colour=discord.Colour.blue(),
+                    timestamp=dt.datetime.now()
+                )
             
-            embed.set_thumbnail(url=ctx.author.display_avatar)
-            embed.set_author(name="Hanabi Bot") 
-            embed.add_field(name=f'Channel was not found.', value=f'Could not find saved channel {channel} {name}.')
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
+                embed.set_thumbnail(url=interaction.user.display_avatar)
+                embed.set_author(name="Hanabi Bot") 
+                embed.add_field(name=f'Channel was not found.', value=f'Could not find saved channel {channel} {name}.')
+                embed.set_footer(text=f'{interaction.user}')
+                await interaction.response.send_message(embed=embed)
         else:
             saved_channels = [SavedChannel(channel) for channel in self.db.get_channels_from_id(channel)]
             if not saved_channels:
@@ -82,11 +82,11 @@ class SaveCommands(commands.Cog):
                     timestamp=dt.datetime.now()
                 )
                 
-                embed.set_thumbnail(url=ctx.author.display_avatar)
+                embed.set_thumbnail(url=interaction.user.display_avatar)
                 embed.set_author(name="Hanabi Bot") 
                 embed.add_field(name=f'Channel was not found.', value=f'Could not find saved channel {channel}.')
-                embed.set_footer(text=f'{ctx.author}')
-                await ctx.reply(embed=embed)
+                embed.set_footer(text=f'{interaction.user}')
+                await interaction.response.send_message(embed=embed)
                 return
             saved_channel = max(saved_channels, key=lambda x: x.db_id)
             
@@ -95,10 +95,10 @@ class SaveCommands(commands.Cog):
         overwrite = PermissionOverwrite()
         overwrite._values = overwrite_json
         
-        target_channel = ctx.guild.get_channel(saved_channel.channel_id)
+        target_channel = interaction.guild.get_channel(saved_channel.channel_id)
         new_channel = await target_channel.clone()
         await target_channel.delete()
-        await new_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+        await new_channel.set_permissions(interaction.guild.default_role, overwrite=overwrite)
         await new_channel.edit(position=saved_channel.position)
         
         embed = discord.Embed(
@@ -107,40 +107,42 @@ class SaveCommands(commands.Cog):
             timestamp=dt.datetime.now()
         )
         
-        embed.set_thumbnail(url=ctx.author.display_avatar)
+        embed.set_thumbnail(url=interaction.user.display_avatar)
         embed.set_author(name="Hanabi Bot") 
         embed.add_field(name=f'#{new_channel.name} has been reset to default permissions.', value=f'')
-        embed.set_footer(text=f'{ctx.author}')
+        embed.set_footer(text=f'{interaction.user}')
         await new_channel.send(embed=embed)
     
         
-    @commands.command(name="save")
-    async def save_command(self, ctx: commands.Context, name: str):
+    @discord.app_commands.command(name="save", description="Saves the layout and permissions of a server.")
+    @discord.app_commands.describe(name="The name of the save.")
+    async def save_command(self, interaction: discord.Interaction, name: str):
         if not name:
             return
-        if self.db.get_saved_server(ctx.guild.id, name):
+        
+        if self.db.get_saved_server(interaction.guild.id, name):
             embed = discord.Embed(
                 title="Cannot Save Server",
                 colour=discord.Colour.red(),
                 timestamp=dt.datetime.now()
             )
             
-            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot") 
-            embed.add_field(name=f'Server cannot be saved.', value=f'Save of {ctx.guild.name} {name} already exists.')
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
+            embed.add_field(name=f'Server cannot be saved.', value=f'Save of {interaction.guild.name} {name} already exists.')
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
             return
             
         
-        channels = ctx.guild.channels
+        channels = interaction.guild.channels
         category_channels = [channel for channel in channels if channel.type == ChannelType.category]
         structure_channels = [channel for channel in channels if channel.type in strucutre_channel_types]                
         
-        saved_server = SavedServer(self.db.new_saved_server(ctx.guild.id, name))
+        saved_server = SavedServer(self.db.new_saved_server(interaction.guild.id, name))
         saved_category_channels = []
         for category_channel in category_channels:
-            saved_category_channels.append(SavedChannel(self.db.new_saved_channel(category_channel.id, name, saved_server.db_id, category_channel.name, category_channel.type.value, category_channel.position, -1, str(category_channel.overwrites_for(ctx.guild.default_role)._values))))
+            saved_category_channels.append(SavedChannel(self.db.new_saved_channel(category_channel.id, name, saved_server.db_id, category_channel.name, category_channel.type.value, category_channel.position, -1, str(category_channel.overwrites_for(interaction.guild.default_role)._values))))
             
         for structure_channel in structure_channels:
             parent = -1
@@ -148,7 +150,7 @@ class SaveCommands(commands.Cog):
                 for saved_category_channel in saved_category_channels:
                     if structure_channel.category.id == saved_category_channel.channel_id:
                         parent = saved_category_channel.db_id
-            permissions = str(structure_channel.overwrites_for(ctx.guild.default_role)._values).replace("'", '"').replace('False', '"False"').replace('True', '"True"')
+            permissions = str(structure_channel.overwrites_for(interaction.guild.default_role)._values).replace("'", '"').replace('False', '"False"').replace('True', '"True"')
             self.db.new_saved_channel(structure_channel.id, name, saved_server.db_id, structure_channel.name, structure_channel.type.value, structure_channel.position, parent, permissions)
             
         embed = discord.Embed(
@@ -157,32 +159,34 @@ class SaveCommands(commands.Cog):
             timestamp=dt.datetime.now()
         )
         
-        embed.set_thumbnail(url=ctx.author.display_avatar)
+        embed.set_thumbnail(url=interaction.user.display_avatar)
         embed.set_author(name="Hanabi Bot") 
-        embed.add_field(name=f'Server {ctx.guild.name} has been saved to {name}.', value=f'')
-        embed.set_footer(text=f'{ctx.author}')
-        await ctx.reply(embed=embed)
+        embed.add_field(name=f'Server {interaction.guild.name} has been saved to {name}.', value=f'')
+        embed.set_footer(text=f'{interaction.user}')
+        await interaction.response.send_message(embed=embed)
     
     
-    @commands.command(name="restore")
-    async def restore_command(self, ctx: commands.Context, name: str):
+    @discord.app_commands.command(name="restore", description="Restores a server from a saved name.")
+    @discord.app_commands.describe(name="The name of the save.")
+    async def restore_command(self, interaction: discord.Interaction, name: str):
         if not name:
             return
-        if not self.db.get_saved_server(ctx.guild.id, name):
+        
+        if not self.db.get_saved_server(interaction.guild.id, name):
             embed = discord.Embed(
                 title="Cannot Restore Server",
                 colour=discord.Colour.red(),
                 timestamp=dt.datetime.now()
             )
             
-            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot") 
-            embed.add_field(name=f'Server cannot be restored.', value=f'Restore of {ctx.guild.name} {name} does not exist.')
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
+            embed.add_field(name=f'Server cannot be restored.', value=f'Restore of {interaction.guild.name} {name} does not exist.')
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
             return
         
-        saved_server = SavedServer(self.db.get_saved_server(ctx.guild.id, name))
+        saved_server = SavedServer(self.db.get_saved_server(interaction.guild.id, name))
         saved_channels = [SavedChannel(channel) for channel in self.db.get_all_channels_from_server_and_name(saved_server.db_id, name)]
         parent_channels = [channel for channel in saved_channels if channel.parent == -1]
         child_channels = [channel for channel in saved_channels if channel.parent != -1]
@@ -191,20 +195,20 @@ class SaveCommands(commands.Cog):
         
         log_channels = [self.welcome_channel, self.general_logs, self.staff_logs]
         
-        for c in ctx.guild.channels:
+        for c in interaction.guild.channels:
             if c.id not in log_channels:
                 await c.delete()
         
         for parent_channel in parent_channels:
             match parent_channel.type:
                 case 2:
-                    target_channel = await ctx.guild.create_voice_channel(parent_channel.channel_name)
+                    target_channel = await interaction.guild.create_voice_channel(parent_channel.channel_name)
                 case 4:
-                    target_channel = await ctx.guild.create_category_channel(parent_channel.channel_name)
+                    target_channel = await interaction.guild.create_category_channel(parent_channel.channel_name)
                 case 0:
-                    target_channel = await ctx.guild.create_text_channel(parent_channel.channel_name)
+                    target_channel = await interaction.guild.create_text_channel(parent_channel.channel_name)
                 case _:
-                    target_channel = await ctx.guild.create_text_channel(parent_channel.channel_name)
+                    target_channel = await interaction.guild.create_text_channel(parent_channel.channel_name)
             new_parent_channels.append(target_channel)
         
         for i in range(len(new_parent_channels)):
@@ -214,19 +218,19 @@ class SaveCommands(commands.Cog):
             overwrite_json = old_parent_channel.permissions
             overwrite = PermissionOverwrite()
             overwrite._values = overwrite_json
-            await new_parent_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+            await new_parent_channel.set_permissions(interaction.guild.default_role, overwrite=overwrite)
             await new_parent_channel.edit(position=old_parent_channel.position)
         
         for child_channel in child_channels:
             match child_channel.type:
                 case 2:
-                    target_channel = await ctx.guild.create_voice_channel(child_channel.channel_name)
+                    target_channel = await interaction.guild.create_voice_channel(child_channel.channel_name)
                 case 4:
-                    target_channel = await ctx.guild.create_category(child_channel.channel_name)
+                    target_channel = await interaction.guild.create_category(child_channel.channel_name)
                 case 0:
-                    target_channel = await ctx.guild.create_text_channel(child_channel.channel_name)
+                    target_channel = await interaction.guild.create_text_channel(child_channel.channel_name)
                 case _:
-                    target_channel = await ctx.guild.create_text_channel(child_channel.channel_name)
+                    target_channel = await interaction.guild.create_text_channel(child_channel.channel_name)
             new_child_channels.append(target_channel)
             
         for i in range(len(new_child_channels)):
@@ -241,7 +245,7 @@ class SaveCommands(commands.Cog):
                 if parent_channels[i].db_id == parent_id:
                     category_channel = new_parent_channels[i]
                 
-            await new_child_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+            await new_child_channel.set_permissions(interaction.guild.default_role, overwrite=overwrite)
             await new_child_channel.edit(category=category_channel, position=old_child_channel.position)
 
         self.db.delete_all_locked_channels()
@@ -253,19 +257,18 @@ class SaveCommands(commands.Cog):
             timestamp=dt.datetime.now()
         )
         
-        embed.set_thumbnail(url=ctx.author.display_avatar)
+        embed.set_thumbnail(url=interaction.user.display_avatar)
         embed.set_author(name="Hanabi Bot") 
         embed.add_field(name=f'Server has been restored', value=f'Server has been restored from save {name}.')
         embed.add_field(name=f'Save has been removed. Please re-save.', value=f'')
         embed.add_field(name=f'All locked channels have been removed.', value=f'Re-lock all channels as needed.')
-        embed.set_footer(text=f'{ctx.author}')
-        await ctx.guild.get_channel(self.staff_logs).send(embed=embed)
-        return
+        embed.set_footer(text=f'{interaction.user}')
+        await interaction.guild.get_channel(self.staff_logs).send(embed=embed)
         
     
-    @commands.command(name="maintenance")
-    async def maintenance_command(self, ctx: commands.Context): 
-        all_channels = ctx.guild.channels
+    @discord.app_commands.command(name="maintenance", description="Toggles maintenance mode.")
+    async def maintenance_command(self, interaction: discord.Interaction):
+        all_channels = interaction.guild.channels
         locked_channels = [LockedChannel(channel) for channel in self.db.get_all_locked_channels()]
         locked_channel_ids = [channel.channel_id for channel in locked_channels]
         non_locked_channels = [channel for channel in all_channels if channel.id not in locked_channel_ids]
@@ -273,9 +276,9 @@ class SaveCommands(commands.Cog):
         maintenance_mode = self.db.check_maintenance_mode()
         
         for channel in non_locked_channels:
-            overwrites = channel.overwrites_for(ctx.guild.default_role)
+            overwrites = channel.overwrites_for(interaction.guild.default_role)
             overwrites._values['send_messages'] = maintenance_mode
-            await channel.set_permissions(ctx.guild.default_role, overwrite=overwrites)
+            await channel.set_permissions(interaction.guild.default_role, overwrite=overwrites)
             
         self.db.set_maintenance_mode(not maintenance_mode)
         
@@ -286,11 +289,11 @@ class SaveCommands(commands.Cog):
                 timestamp=dt.datetime.now()
             )
             
-            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Maintenance Mode has been disabled.', value=f'')
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
             
         else:
             embed = discord.Embed(
@@ -299,12 +302,11 @@ class SaveCommands(commands.Cog):
                 timestamp=dt.datetime.now()
             )
             
-            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Maintenance Mode has been enabled.', value=f'')
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
-        return
+            embed.set_footer(text=f'{interaction.author}')
+            await interaction.response.send_message(embed=embed)
     
 async def setup(bot: commands.Bot):
     await bot.add_cog(SaveCommands(bot))

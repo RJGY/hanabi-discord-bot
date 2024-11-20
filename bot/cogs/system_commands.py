@@ -25,6 +25,7 @@ class SystemCommands(commands.Cog):
     async def on_ready(self):
         self.invites = await self.bot.get_guild(self.guild_id).invites()
         logging.info("Loaded invites into system_commands bot.")
+        logging.info("Loaded save commands.")
         
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
@@ -174,6 +175,14 @@ class SystemCommands(commands.Cog):
         embed.add_field(name=f'Old Message:', value=f'{before.content}', inline=False)
 
         await self.bot.get_channel(self.general_logs).send(embed=embed)
+        
+
+    @commands.hybrid_command(name="sync", description="Syncs the bot with slash commands.")
+    async def sync_command(self, ctx: commands.Context):
+        """Syncs the bot with slash commands."""
+        await ctx.defer()
+        synced = await self.bot.tree.sync()
+        await ctx.send(f"Synced {len(synced)} commands with slash commands.")
     
 
 async def setup(bot: commands.Bot):

@@ -1,6 +1,7 @@
 class User():
     def __init__(self, args):
-        if len(args) != 8:
+        if len(args) != 9:
+            print('Invalid number of arguments passed to User constructor')
             return
         self.db_id = args[0]
         self.user_id = args[1]

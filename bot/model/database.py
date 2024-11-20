@@ -92,7 +92,7 @@ class Database():
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
         cursor = self.database.cursor()
-        cursor.execute(f'SELECT * FROM users WHERE id = {user_id}')
+        cursor.execute(f'SELECT * FROM users WHERE user_id = {user_id}')
         return cursor.fetchone()
     
     def get_locked_channel(self, channel_id: int) -> Optional[list]:
@@ -140,62 +140,62 @@ class Database():
     
     """Update objects"""
         
-    def add_message_count(self, id: int):
+    def add_message_count(self, user_id: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        if not self.get_user(id):
+        if not self.get_user(user_id):
             return
         cursor = self.database.cursor()
-        cursor.execute(f'SELECT message_count FROM users WHERE id = {id}')
+        cursor.execute(f'SELECT message_count FROM users WHERE user_id = {user_id}')
         message_count = int(cursor.fetchone()[0]) + 1
-        self.database.execute(f'UPDATE users SET message_count = {message_count} WHERE id = {id};')
+        self.database.execute(f'UPDATE users SET message_count = {message_count} WHERE user_id = {user_id};')
         self.database.commit()
     
-    def add_timeout_count(self, id: int):
+    def add_timeout_count(self, user_id: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        if not self.get_user(id):
+        if not self.get_user(user_id):
             return
         cursor = self.database.cursor()
-        cursor.execute(f'SELECT timeout_count FROM users WHERE id = {id}')
+        cursor.execute(f'SELECT timeout_count FROM users WHERE user_id = {user_id};')
         timeout_count = int(cursor.fetchone()[0]) + 1
-        self.database.execute(f'UPDATE users SET timeout_count = {timeout_count} WHERE id = {id};')
+        self.database.execute(f'UPDATE users SET timeout_count = {timeout_count} WHERE user_id = {user_id};')
         self.database.commit()
         
-    def add_ban_count(self, id: int):
+    def add_ban_count(self, user_id: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        if not self.get_user(id):
+        if not self.get_user(user_id):
             return
         cursor = self.database.cursor()
-        cursor.execute(f'SELECT ban_count FROM users WHERE id = {id}')
+        cursor.execute(f'SELECT ban_count FROM users WHERE user_id = {user_id}')
         ban_count = int(cursor.fetchone()[0]) + 1
-        self.database.execute(f'UPDATE users SET ban_count = {ban_count} WHERE id = {id};')
+        self.database.execute(f'UPDATE users SET ban_count = {ban_count} WHERE user_id = {user_id};')
         self.database.commit()
         
-    def add_kick_count(self, id: int):
+    def add_kick_count(self, user_id: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        if not self.get_user(id):
+        if not self.get_user(user_id):
             return
         cursor = self.database.cursor()
-        cursor.execute(f'SELECT kick_count FROM users WHERE id = {id}')
+        cursor.execute(f'SELECT kick_count FROM users WHERE user_id = {user_id}')
         kick_count = int(cursor.fetchone()[0]) + 1
-        self.database.execute(f'UPDATE users SET kick_count = {kick_count} WHERE id = {id};')
+        self.database.execute(f'UPDATE users SET kick_count = {kick_count} WHERE user_id = {user_id};')
         self.database.commit()
         
-    def set_user_id(self, id: int, role: int):
+    def set_user_id(self, user_id: int, role: int):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        if not self.get_user(id):
+        if not self.get_user(user_id):
             return
-        self.database.execute(f'UPDATE users SET role = {role} WHERE id = {id};')
+        self.database.execute(f'UPDATE users SET role = {role} WHERE user_id = {user_id};')
         self.database.commit()
         
-    def clear_user_punishment_history(self, id):
+    def clear_user_punishment_history(self, user_id):
         if not self.database:
             self.database = sqlite3.connect('database/hanabi_bot.db')
-        self.database.execute(f'UPDATE users SET kick_count = 0, timeout_count = 0, ban_count = 0 WHERE id = {id};')
+        self.database.execute(f'UPDATE users SET kick_count = 0, timeout_count = 0, ban_count = 0 WHERE user_id = {user_id};')
         self.database.commit()
         
     def has_init_all_users(self):

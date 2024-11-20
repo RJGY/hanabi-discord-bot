@@ -152,28 +152,38 @@ class ModerationCommands(commands.Cog):
             
         self.db.has_init_all_users()
             
-    async def on_command_success(self, command: commands.Context):
+    async def on_command_success(self, command: commands.Context=None, interaction: discord.Interaction=None):
         """On command function."""
         embed = discord.Embed(
             title="Command Used",
             colour=discord.Colour.green(),
             timestamp=dt.datetime.now()
         )
-        embed.set_thumbnail(url=command.author.display_avatar)
-        embed.set_author(name="Hanabi Bot")
-        embed.add_field(name=f'{command.author} (ID: {command.author.id}) ran command {command.message.content} in {command.channel}', value='', inline=False)
+        if interaction:
+            embed.set_thumbnail(url=interaction.user.display_avatar)
+            embed.set_author(name="Hanabi Bot")
+            embed.add_field(name=f'{interaction.user} (ID: {interaction.user.id}) ran command {interaction.command.name} in {interaction.channel}', value='', inline=False)
+        else:
+            embed.set_thumbnail(url=command.author.display_avatar)
+            embed.set_author(name="Hanabi Bot")
+            embed.add_field(name=f'{command.author} (ID: {command.author.id}) ran command {command.message.content} in {command.channel}', value='', inline=False)
         await self.bot.get_channel(self.staff_logs).send(embed=embed)
         
-    async def on_command_fail(self, command: commands.Context):
+    async def on_command_fail(self, command: Optional[commands.Context]=None, interaction: Optional[discord.Interaction]=None):
         """On command fail function."""
         embed = discord.Embed(
             title="Command Used",
             colour=discord.Colour.green(),
             timestamp=dt.datetime.now()
         )
-        embed.set_thumbnail(url=command.author.display_avatar)
-        embed.set_author(name="Hanabi Bot")
-        embed.add_field(name=f'{command.author} (ID: {command.author.id}) attempted to exeucte {command.message.content} in {command.channel}', value='Failed Reason: No Permission', inline=False)
+        if command:
+            embed.set_thumbnail(url=command.author.display_avatar)
+            embed.set_author(name="Hanabi Bot")
+            embed.add_field(name=f'{command.author} (ID: {command.author.id}) attempted to exeucte {command.message.content} in {command.channel}', value='Failed Reason: No Permission', inline=False)
+        else:
+            embed.set_thumbnail(url=interaction.user.display_avatar)
+            embed.set_author(name="Hanabi Bot")
+            embed.add_field(name=f'{interaction.user} (ID: {interaction.user.id}) attempted to exeucte {interaction.message.content} in {interaction.channel}', value='Failed Reason: No Permission', inline=False)
         await self.bot.get_channel(self.staff_logs).send(embed=embed)
         
     """Tasks"""
@@ -270,35 +280,37 @@ class ModerationCommands(commands.Cog):
             self.db.add_message_count(message.author.id)
             
     """Commands"""
+    @discord.app_commands.command(name="test", description="Test command.")
+    async def test_command(self, interaction: discord.Interaction):
+        await interaction.response.send_message("Test command.")
         
-    @commands.command(name="info")
-    async def info_command(self, ctx: commands.Context, person: str):
+    @discord.app_commands.command(name="info", description="Retrieves the discord info from a user.")
+    @discord.app_commands.describe(member="The user to retrieve info from.")
+    async def info_command(self, interaction: discord.Interaction, member: discord.Member):
         """Retrieves the discord info from a user."""
-        if not person:
+        if not member:
             return
-        await ctx.invoke(self.on_command_success)
-        if "<@" in person:
-            member = ctx.guild.get_member(int(person[2:-1]))
-        else:
-            member = ctx.guild.get_member(person)
         
         if not self.db.get_user(member.id):
             self.db.new_user(member.id, "N/A", 0)
+    
+        await self.on_command_success(interaction=interaction)
         
         db_data = self.db.get_user(member.id)
         user = User(db_data)
-        
         embed = discord.Embed(
             title="Info",
             colour=discord.Colour.blue(),
             timestamp=dt.datetime.now()
         )
+        
         embed.set_thumbnail(url=member.display_avatar)
         embed.set_author(name="Hanabi Bot")
         embed.add_field(name=f'User Name:', value=f'{member.name}', inline=True)
         embed.add_field(name=f'Server Join Date', value=f'{member.joined_at.date()}', inline=True)
         embed.add_field(name='User ID:', value=f'{member.id}', inline=True)
-        embed.add_field(name='Invited Link: ', value=f'{user.invite_code}', inline=True)
+        invite_code = user.invite_code if user.invite_code else "N/A"
+        embed.add_field(name='Invited Link: ', value=f'{invite_code}', inline=True)
         embed.add_field(name='Account Creation Date:', value=f'{member.created_at.date()}', inline=True)
         embed.add_field(name='Total Messages:', value=f'{user.message_count}')
         roles = [role.name for role in member.roles if role.name != '@everyone']
@@ -307,36 +319,31 @@ class ModerationCommands(commands.Cog):
         embed.add_field(name='Kicks: ', value=f'{user.kick_count}', inline=True)
         embed.add_field(name='Timeouts: ', value=f'{user.timeout_count}', inline=True)
         embed.add_field(name='Has Been Previously Banned: ', value=f'{bool(user.has_been_banned)}', inline=True)
-        embed.set_footer(text=f'{ctx.author}')
-        await ctx.reply(embed=embed)
+        embed.set_footer(text=f'{interaction.user.display_name}')
+        await interaction.response.send_message(embed=embed)
             
-    @commands.command(name="timeout")
-    async def timeout_command(self, ctx: commands.Context, person: str, silent: Optional[str]=None, duration: Optional[str]=None, reason: Optional[str]=None):
+    @discord.app_commands.command(name="timeout", description="Times out a user.")
+    @discord.app_commands.describe(member="The user to time out.")
+    @discord.app_commands.describe(silent="Silences the timeout message.")
+    @discord.app_commands.describe(duration="The duration of the timeout.")
+    @discord.app_commands.describe(reason="The reason for the timeout.")
+    async def timeout_command(self, interaction: discord.Interaction, member: discord.Member, silent: Optional[bool]=None, duration: Optional[str]=None, reason: Optional[str]=None):
         """Times out a user."""
-        if silent and silent != "-s":
-            reason = duration
-            duration = silent
+        if not silent:
             silent = False
-        elif silent == "-s":
-            silent = True
             
-        if not person:
+        if not member:
             return
         
-        if "<@" in person:
-            member = ctx.guild.get_member(int(person[2:-1]))
-        else:
-            member = ctx.guild.get_member(person)
-        
         target_role = User(self.db.get_user(member.id)).role
-        user_role = User(self.db.get_user(ctx.author.id)).role
+        user_role = User(self.db.get_user(interaction.user.id)).role
         if user_role > target_role and user_role > 0:
             date = self.get_duration(duration)
             today = dt.datetime.now().astimezone()
             if not date or (date - today).days > 28:
                 date = dt.datetime.now().astimezone() + dt.timedelta(days=28)
             await member.edit(timed_out_until=date, reason=reason)
-            await ctx.invoke(self.on_command_success)
+            await self.on_command_success(interaction=interaction)
             self.db.add_timeout_count(member.id)
             if silent:
                 return
@@ -347,11 +354,11 @@ class ModerationCommands(commands.Cog):
             )
             embed.set_thumbnail(url=member.display_avatar)
             embed.set_author(name="Hanabi Bot")
-            embed.add_field(name=f'{member.display_name} was successfully timed out by {ctx.author.display_name}', value='', inline=False)
+            embed.add_field(name=f'{member.display_name} was successfully timed out by {interaction.user.display_name}', value='', inline=False)
             embed.add_field(name=f'Timed out until: {date}', value='', inline=False)
             embed.add_field(name=f'Reason: {reason}', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
+            embed.set_footer(text=f'{interaction.user.display_name}')
+            await interaction.response.send_message(embed=embed)
         else:
             if silent:
                 return
@@ -363,33 +370,28 @@ class ModerationCommands(commands.Cog):
             embed.set_thumbnail(url=member.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
-            await ctx.invoke(self.on_command_fail)
+            embed.set_footer(text=f'{interaction.user.display_name}')
+            await interaction.response.send_message(embed=embed)
+            await self.on_command_fail(interaction)
         
-    @commands.command(name="untimeout")
-    async def untimeout_command(self, ctx: commands.Context, person: str, silent: Optional[str]=None, reason: Optional[str]=None):
+    @discord.app_commands.command(name="untimeout", description="Removes timeout from a user.")
+    @discord.app_commands.describe(person="The user to remove the timeout from.")
+    @discord.app_commands.describe(silent="Silences the timeout message.")
+    @discord.app_commands.describe(reason="The reason for the untimeout.")
+    async def untimeout_command(self, interaction: discord.Interaction, person: discord.Member, silent: Optional[bool]=None, reason: Optional[str]=None):
         """Removes timeout from a user."""
-        if silent and silent != "-s":
-            reason = silent
+        if not silent:
             silent = False
-        elif silent == "-s":
-            silent = True
         
         if not person:
             return
-        
-        if "<@" in person:
-            member = ctx.guild.get_member(int(person[2:-1]))
-        else:
-            member = ctx.guild.get_member(person)
             
-        target_role = User(self.db.get_user(member.id)).role
-        user_role = User(self.db.get_user(ctx.author.id)).role
-        is_timed_out = member.is_timed_out()
+        target_role = User(self.db.get_user(person.id)).role
+        user_role = User(self.db.get_user(interaction.user.id)).role
+        is_timed_out = person.is_timed_out()
         if user_role > target_role and is_timed_out and user_role > 0:
-            await member.timeout(None, reason=reason)
-            await ctx.invoke(self.on_command_success)
+            await person.timeout(None, reason=reason)
+            await self.on_command_success(interaction=interaction)
             if silent:
                 return
             embed = discord.Embed(
@@ -397,12 +399,12 @@ class ModerationCommands(commands.Cog):
                 colour=discord.Colour.blue(),
                 timestamp=dt.datetime.now()
             )
-            embed.set_thumbnail(url=member.display_avatar)
+            embed.set_thumbnail(url=person.display_avatar)
             embed.set_author(name="Hanabi Bot")
-            embed.add_field(name=f'{member.display_name} was untimed out by {ctx.author.display_name}', value='', inline=False)
+            embed.add_field(name=f'{person.display_name} was untimed out by {interaction.user.display_name}', value='', inline=False)
             embed.add_field(name=f'Reason: {reason}', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
         else:
             if silent:
                 return
@@ -411,36 +413,31 @@ class ModerationCommands(commands.Cog):
                 colour=discord.Colour.dark_blue(),
                 timestamp=dt.datetime.now()
             )
-            embed.set_thumbnail(url=member.display_avatar)
+            embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
-            await ctx.invoke(self.on_command_fail)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
+            await self.on_command_fail(interaction=interaction)
             
-    @commands.command(name="kick")
-    async def kick_command(self, ctx: commands.Context, person: str, silent: Optional[str]=None, reason: Optional[str]=None):
+    @discord.app_commands.command(name="kick", description="Kicks a user from guild.")
+    @discord.app_commands.describe(person="The user to kick.")
+    @discord.app_commands.describe(silent="Silences the kick message.")
+    @discord.app_commands.describe(reason="The reason for the kick.")
+    async def kick_command(self, interaction: discord.Interaction, person: discord.Member, silent: Optional[bool]=None, reason: Optional[str]=None):
         """Kicks a user from guild."""
-        if silent and silent != "-s":
-            reason = silent
+        if not silent :
             silent = False
-        elif silent == "-s":
-            silent = True
         
         if not person:
             return
-        
-        if "<@" in person:
-            member = ctx.guild.get_member(int(person[2:-1]))
-        else:
-            member = ctx.guild.get_member(person)
             
-        target_role = User(self.db.get_user(member.id)).role
-        user_role = User(self.db.get_user(ctx.author.id)).role
+        target_role = User(self.db.get_user(person.id)).role
+        user_role = User(self.db.get_user(interaction.user.id)).role
         if user_role > target_role and user_role > 0:
-            await member.kick(reason=reason)
-            await ctx.invoke(self.on_command_success)
-            self.db.add_kick_count(member.id)
+            await person.kick(reason=reason)
+            await self.on_command_success(interaction=interaction)
+            self.db.add_kick_count(person.id)
             if silent:
                 return
             embed = discord.Embed(
@@ -448,12 +445,12 @@ class ModerationCommands(commands.Cog):
                 colour=discord.Colour.blue(),
                 timestamp=dt.datetime.now()
             )
-            embed.set_thumbnail(url=member.display_avatar)
+            embed.set_thumbnail(url=person.display_avatar)
             embed.set_author(name="Hanabi Bot")
-            embed.add_field(name=f'{member.display_name} was kicked by {ctx.author.display_name}', value='', inline=False)
+            embed.add_field(name=f'{person.display_name} was kicked by {interaction.user.display_name}', value='', inline=False)
             embed.add_field(name=f'Reason: {reason}', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
         else:
             if silent:
                 return
@@ -462,35 +459,35 @@ class ModerationCommands(commands.Cog):
                 colour=discord.Colour.dark_blue(),
                 timestamp=dt.datetime.now()
             )
-            embed.set_thumbnail(url=member.display_avatar)
+            embed.set_thumbnail(url=person.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
-            await ctx.invoke(self.on_command_fail)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
+            await self.on_command_fail(interaction=interaction)
             
-    @commands.command(name="ban")
-    async def ban_command(self, ctx: commands.Context, person: str, silent: Optional[str]=None, reason: Optional[str]=None):
+    @discord.app_commands.command(name="ban", description="Bans a user from guild.")
+    @discord.app_commands.describe(person="The user to ban.")
+    @discord.app_commands.describe(silent="Silences the ban message.")
+    @discord.app_commands.describe(reason="The reason for the ban.")
+    async def ban_command(self, interaction: discord.Interaction, person: discord.Member, silent: Optional[bool]=None, reason: Optional[str]=None):
         """Bans a user from guild."""
-        if silent and silent != "-s":
-            reason = silent
+        if not silent:
             silent = False
-        elif silent == "-s":
-            silent = True
             
         if not person:
             return
         
         if "<@" in person:
-            member = ctx.guild.get_member(int(person[2:-1]))
+            member = interaction.guild.get_member(int(person[2:-1]))
         else:
-            member = ctx.guild.get_member(person)
+            member = interaction.guild.get_member(person)
             
         target_role = User(self.db.get_user(member.id)).role
-        user_role = User(self.db.get_user(ctx.author.id)).role
+        user_role = User(self.db.get_user(interaction.user.id)).role
         if user_role > target_role and user_role > 0:
             await member.ban(reason=reason)
-            await ctx.invoke(self.on_command_success)
+            await self.on_command_success(interaction=interaction)
             self.db.add_ban_count(member.id)
             if silent:
                 return
@@ -501,10 +498,10 @@ class ModerationCommands(commands.Cog):
             )
             embed.set_thumbnail(url=member.display_avatar)
             embed.set_author(name="Hanabi Bot")
-            embed.add_field(name=f'{member.display_name} was banned by {ctx.author.display_name}', value='', inline=False)
+            embed.add_field(name=f'{member.display_name} was banned by {interaction.user.display_name}', value='', inline=False)
             embed.add_field(name=f'Reason: {reason}', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
         else:
             if silent:
                 return
@@ -516,31 +513,26 @@ class ModerationCommands(commands.Cog):
             embed.set_thumbnail(url=member.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
-            await ctx.invoke(self.on_command_fail)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
+            await self.on_command_fail(interaction=interaction)
             
-    @commands.command(name="unban")
-    async def unban_command(self, ctx: commands.Context, person: str, silent: Optional[str]=None, reason: Optional[str]=None):
+    @discord.app_commands.command(name="unban", description="Unbans a user from guild.")
+    @discord.app_commands.describe(person="The user to unban.")
+    @discord.app_commands.describe(silent="Silences the unban message.")
+    @discord.app_commands.describe(reason="The reason for the unban.")
+    async def unban_command(self, interaction: discord.Interaction, person: discord.Member, silent: Optional[bool]=None, reason: Optional[str]=None):
         """Unbans a user from guild."""
-        if silent and silent != "-s":
-            reason = silent
+        if not silent:
             silent = False
-        elif silent == "-s":
-            silent = True
             
         if not person:
             return
-        
-        if "<@" in person:
-            member = ctx.guild.get_member(int(person[2:-1]))
-        else:
-            member = ctx.guild.get_member(person)
             
-        user_role = User(self.db.get_user(ctx.author.id)).role
+        user_role = User(self.db.get_user(interaction.user.id)).role
         if user_role > 0:
-            await member.unban(reason=reason)
-            await ctx.invoke(self.on_command_success)
+            await person.unban(reason=reason)
+            await self.on_command_success(interaction=interaction)
             if silent:
                 return
             embed = discord.Embed(
@@ -548,69 +540,53 @@ class ModerationCommands(commands.Cog):
                 colour=discord.Colour.blue(),
                 timestamp=dt.datetime.now()
             )
-            embed.set_thumbnail(url=member.display_avatar)
+            embed.set_thumbnail(url=person.display_avatar)
             embed.set_author(name="Hanabi Bot")
-            embed.add_field(name=f'{member.display_name} was unbanned by {ctx.author.display_name}', value='', inline=False)
+            embed.add_field(name=f'{person.display_name} was unbanned by {interaction.user.display_name}', value='', inline=False)
             embed.add_field(name=f'Reason: {reason}', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
         else:
-            await ctx.invoke(self.on_command_fail)
+            await self.on_command_fail(interaction=interaction)
             
-    @commands.command(name="history")
-    async def history_command(self, ctx: commands.Context, person: str, silent: Optional[str]=None, channel: Optional[str]=None):
+    @discord.app_commands.command(name="history", description="Gets chat history of a user.")
+    @discord.app_commands.describe(person="The user to retrieve chat history from.")
+    @discord.app_commands.describe(channel="The channel to retrieve chat history from.")
+    async def history_command(self, interaction: discord.Interaction, person: discord.Member, channel: Optional[discord.TextChannel]=None):
         """Gets chat history of a user."""
-        if silent and silent != "-s":
-            channel = silent
-            silent = False
-        elif silent == "-s":
-            silent = True
-            
         if not person:
             return
         
-        user_role = User(self.db.get_user(ctx.author.id)).role
+        user_role = User(self.db.get_user(interaction.user.id)).role
         if user_role < 2:
-            if silent:
-                return
             embed = discord.Embed(
                 title="Failed to execute history command.",
                 colour=discord.Colour.dark_blue(),
                 timestamp=dt.datetime.now()
             )
-            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
-            await ctx.invoke(self.on_command_fail)
-            return
-        
-        if "<@" in person:
-            member = ctx.guild.get_member(int(person[2:-1]))
-        else:
-            member = ctx.guild.get_member(person)
-            
-        if not member:
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
+            await self.on_command_fail(interaction=interaction)
             return
         
         target_channel = None
-        channel_name = ""
+        channel_name = None
         
         if not channel:
-            channel_name = ctx.channel.name
-            target_channel = ctx.channel
+            channel_name = interaction.channel.name
+            target_channel = interaction.channel
         else:
-            if "<#" in channel:
-                channel = int(channel[2:-1])
-            channel_name = ctx.guild.get_channel(channel).name
-            target_channel = ctx.guild.get_channel(channel)
+            channel_name = channel.name
+            target_channel = channel
             
         if not target_channel:
             return
         
         
-        messages = [message async for message in target_channel.history(limit=None, oldest_first=True) if message.author.id == member.id]
+        messages = [message async for message in target_channel.history(limit=None, oldest_first=True) if message.author.id == person.id]
         
         if len(messages) < 1:
             embed = discord.Embed(
@@ -618,13 +594,13 @@ class ModerationCommands(commands.Cog):
                 colour=discord.Colour.dark_blue(),
                 timestamp=dt.datetime.now()
             )
-            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Reason: No messages sent.', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
+            embed.set_footer(text=f'{interaction.user}')
             return
         
-        await ctx.invoke(self.on_command_success)
+        self.on_command_success(interaction=interaction)
         
         message_str = ""
         for message in messages: 
@@ -632,7 +608,7 @@ class ModerationCommands(commands.Cog):
             
         current_time = dt.datetime.now().astimezone()
         
-        self.pastebin.create_new_paste(f'{member.display_name} messages in {channel_name} as of {current_time}', message_str)
+        self.pastebin.create_new_paste(f'{person.display_name} messages in {channel_name} as of {current_time}', message_str)
         last_paste = self.pastebin.get_last_paste_url()
         
         embed = discord.Embed(
@@ -640,36 +616,37 @@ class ModerationCommands(commands.Cog):
             colour=discord.Colour.blue(),
             timestamp=dt.datetime.now()
         )
-        embed.set_thumbnail(url=member.display_avatar)
+        embed.set_thumbnail(url=person.display_avatar)
         embed.set_author(name="Hanabi Bot")
-        embed.add_field(name=f'{member.display_name} Chat  :', value=f'{channel_name}', inline=False)
+        embed.add_field(name=f'{person.display_name} Chat  :', value=f'{channel_name}', inline=False)
         embed.add_field(name=f'Pastebin Link:', value=f'{last_paste}', inline=False)
-        embed.set_footer(text=f'{ctx.author}')
-        await ctx.reply(embed=embed)
+        embed.set_footer(text=f'{interaction.user}')
+        await interaction.response.send_message(embed=embed)
         
-    @commands.command(name="addrole")
-    async def addrole_command(self, ctx: commands.Context, person: str, role: str, silent: Optional[str]=None, duration: Optional[str]=None, reason: Optional[str]=None):
+    @discord.app_commands.command(name="addrole", description="Adds a role to a user.")
+    @discord.app_commands.describe(person="The user to add the role to.")
+    @discord.app_commands.describe(role="The role to add.")
+    @discord.app_commands.describe(silent="Silences the add role message.")
+    @discord.app_commands.describe(duration="The duration of the role.")
+    @discord.app_commands.describe(reason="The reason for the role.")
+    async def addrole_command(self, interaction: discord.Interaction, person: discord.Member, role: discord.Role, silent: Optional[bool]=None, duration: Optional[str]=None, reason: Optional[str]=None):
         """Adds a role to a user."""
-        if silent and silent != "-s":
-            reason = duration
-            duration = silent
+        if not silent:
             silent = False
-        elif silent == "-s":
-            silent = True
-        
+
         if not person:
             embed = discord.Embed(
                 title="Failed to execute addrole command.",
                 colour=discord.Colour.dark_blue(),
                 timestamp=dt.datetime.now()
             )
-            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Reason: Incorrect arguements.', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
+            embed.set_footer(text=f'{interaction.user}')
             return
         
-        user_role = User(self.db.get_user(ctx.author.id)).role
+        user_role = User(self.db.get_user(interaction.user.id)).role
         
         # Only admins can use this command
         if user_role < 2:
@@ -680,41 +657,31 @@ class ModerationCommands(commands.Cog):
                 colour=discord.Colour.dark_blue(),
                 timestamp=dt.datetime.now()
             )
-            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
-            await ctx.invoke(self.on_command_fail)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
+            await self.on_command_fail(interaction=interaction)
             return
-        
-        if "<@" in person:
-            member = ctx.guild.get_member(int(person[2:-1]))
-        else:
-            member = ctx.guild.get_member(person)
             
-        if not member:
+        if not person:
             return
-        
-        if "<@" in role:
-            member_role = ctx.guild.get_role(int(role[3:-1]))
-        else:
-            member_role = ctx.guild.get_role(role)
             
-        if not member_role:
+        if not role:
             return
         
-        if member_role.id == self.admin_role_id:
+        if role.id == self.admin_role_id:
             return
         
         if not reason:
-            reason = f'Added by {ctx.author}'
+            reason = f'Added by {interaction.user}'
         
-        await ctx.author.add_roles(member_role, reason=reason)
+        await interaction.user.add_roles(role, reason=reason)
         expiry_date = self.get_duration(duration)
         
         if expiry_date:
-            self.db.new_temp_role(member.id, member_role.id, expiry_date, reason, ctx.author.id)
+            self.db.new_temp_role(person.id, role.id, expiry_date, reason, interaction.user.id)
             
         if silent: 
             return
@@ -724,30 +691,28 @@ class ModerationCommands(commands.Cog):
             colour=discord.Colour.blue(),
             timestamp=dt.datetime.now()
         )
-        embed.set_thumbnail(url=member.display_avatar)
+        embed.set_thumbnail(url=person.display_avatar)
         embed.set_author(name="Hanabi Bot")
-        embed.add_field(name=f'Role Added:', value=f'{member_role.name}', inline=False)
+        embed.add_field(name=f'Role Added:', value=f'{role.name}', inline=False)
         if not expiry_date:
             embed.add_field(name=f'Duration:', value=f'N/A', inline=False)
         else:
             embed.add_field(name=f'Duration:', value=f'{expiry_date}', inline=False)
         embed.add_field(name=f'Reason:', value=f'{reason}', inline=False)
-        embed.set_footer(text=f'{ctx.author}')
-        await ctx.reply(embed=embed)
+        embed.set_footer(text=f'{interaction.user}')
+        await interaction.response.send_message(embed=embed)
             
     
-    @commands.command(name="removerole")
-    async def removerole_command(self, ctx: commands.Context, person: str, role: str, silent: Optional[str]=None, reason: Optional[str]=None):
-        if silent and silent != "-s":
-            reason = silent
-            silent = False
-        elif silent == "-s":
-            silent = True
-            
+    @discord.app_commands.command(name="removerole", description="Removes a role from a user.")
+    @discord.app_commands.describe(person="The user to remove the role from.")
+    @discord.app_commands.describe(role="The role to remove.")
+    @discord.app_commands.describe(silent="Silences the remove role message.")
+    @discord.app_commands.describe(reason="The reason for the role.")
+    async def removerole_command(self, interaction: discord.Interaction, person: discord.Member, role: discord.Role, silent: Optional[bool]=None, reason: Optional[str]=None):
         if not person:
             return
         
-        user_role = User(self.db.get_user(ctx.author.id)).role
+        user_role = User(self.db.get_user(interaction.user.id)).role
         if user_role < 2:
             if silent: 
                 return
@@ -756,37 +721,28 @@ class ModerationCommands(commands.Cog):
                 colour=discord.Colour.dark_blue(),
                 timestamp=dt.datetime.now()
             )
-            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.reply(embed=embed)
-            await ctx.invoke(self.on_command_fail)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
+            await self.on_command_fail(interaction=interaction)
             return
         
-        if "<@" in person:
-            member = ctx.guild.get_member(int(person[2:-1]))
-        else:
-            member = ctx.guild.get_member(person)
             
-        if not member:
+        if not person:
             return
-        
-        if "<@" in role:
-            member_role = ctx.guild.get_role(int(role[3:-1]))
-        else:
-            member_role = ctx.guild.get_role(role)
             
-        if not member_role:
+        if not role:
             return
         
-        if member_role.id == self.admin_role_id:
+        if role.id == self.admin_role_id:
             return
         
         if not reason:
-            reason = f'Removed by {ctx.author}'
+            reason = f'Removed by {interaction.user}'
             
-        await member.remove_roles(member_role, reason=reason)
+        await interaction.user.remove_roles(role, reason=reason)
         
         if silent: 
             return
@@ -796,29 +752,24 @@ class ModerationCommands(commands.Cog):
             colour=discord.Colour.blue(),
             timestamp=dt.datetime.now()
         )
-        embed.set_thumbnail(url=member.display_avatar)
+        embed.set_thumbnail(url=person.display_avatar)
         embed.set_author(name="Hanabi Bot")
-        embed.add_field(name=f'Role Removed:', value=f'{member_role.name}', inline=False)
+        embed.add_field(name=f'Role Removed:', value=f'{role.name}', inline=False)
         embed.add_field(name=f'Reason:', value=f'{reason}', inline=False)
-        embed.set_footer(text=f'{ctx.author}')
-        await ctx.reply(embed=embed)
+        embed.set_footer(text=f'{interaction.user}')
+        await interaction.response.send_message(embed=embed)
     
-    @commands.command(name="clear")
-    async def clear_command(self, ctx: commands.Context, person: str, silent: Optional[str]=None):
-        if silent == "-s":
-            silent = True
-        
+    @discord.app_commands.command(name="clear", description="Clears all punishment history of a user.")
+    @discord.app_commands.describe(person="The user to clear the punishment history of.")
+    @discord.app_commands.describe(silent="Silences the clear message.")
+    async def clear_command(self, interaction: discord.Interaction, person: discord.Member, silent: Optional[bool]=None):
+        if not silent:
+            silent = False
+            
         if not person:
             return
-        if "<@" in person:
-            member = ctx.guild.get_member(int(person[2:-1]))
-        else:
-            member = ctx.guild.get_member(person)
-            
-        if not member:
-            return
         
-        self.db.clear_user_punishment_history(member.id)
+        self.db.clear_user_punishment_history(person.id)
         
         if silent: 
             return
@@ -829,23 +780,26 @@ class ModerationCommands(commands.Cog):
             timestamp=dt.datetime.now()
         )
         
-        embed.set_thumbnail(url=member.display_avatar)
+        embed.set_thumbnail(url=person.display_avatar)
         embed.set_author(name="Hanabi Bot")
-        embed.add_field(name=f'Punishment history removed from: {member.display_name}', value=f'', inline=False)
-        embed.set_footer(text=f'{ctx.author}')
-        await ctx.reply(embed=embed)
+        embed.add_field(name=f'Punishment history removed from: {person.display_name}', value=f'', inline=False)
+        embed.set_footer(text=f'{interaction.user}')
+        await interaction.response.send_message(embed=embed)
     
-    @commands.command(name="purge")
-    async def purge_command(self, ctx: commands.Context, multi: str, silent: Optional[str]=None):
-        if silent == "-s":
-            silent = True
+    @discord.app_commands.command(name="purge", description="Purges a channel of messages.")
+    @discord.app_commands.describe(multi="The channel/person to purge.")
+    @discord.app_commands.describe(silent="Silences the purge message.")
+    async def purge_command(self, interaction: discord.Interaction, multi: str, silent: Optional[bool]=None):
+        if not silent:
+            silent = False
         
         if "<#" in multi:
             channel = int(multi[2:-1])
-            target_channel = ctx.guild.get_channel(channel)
+            target_channel = interaction.guild.get_channel(channel)
             
             if not target_channel:
                 return
+            
             deleted = await target_channel.purge(limit=None)
             
             if silent:
@@ -856,20 +810,20 @@ class ModerationCommands(commands.Cog):
                 colour=discord.Colour.blue(),
                 timestamp=dt.datetime.now()
             )
-            embed.set_thumbnail(url=ctx.author.display_avatar)
+            embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Removed items from channel: #{target_channel.name}', value=f'Total - {len(deleted)}', inline=False)
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.send(embed=embed)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
             
         else:
             if "<@" in multi:
-                member = ctx.guild.get_member(int(multi[2:-1]))
+                member = interaction.guild.get_member(int(multi[2:-1]))
             else:
-                member = ctx.guild.get_member(multi)
+                member = interaction.guild.get_member(multi)
             if not member:
                 return
-            channels = [discord_channel for discord_channel in ctx.guild.channels if str(discord_channel.type) == 'text']
+            channels = [discord_channel for discord_channel in interaction.guild.channels if str(discord_channel.type) == 'text']
             deleted_messages = dict()
             total_messages = 0
             for discord_channel in channels:
@@ -892,32 +846,28 @@ class ModerationCommands(commands.Cog):
                 for key, value in deleted_messages.items():
                     embed.add_field(name=f'#{key} - {value} messages', value=f'')
             embed.add_field(name=f'Total - {total_messages} messages', value=f'')
-            embed.set_footer(text=f'{ctx.author}')
-            await ctx.send(embed=embed)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.response.send_message(embed=embed)
             
     
-    @commands.command(name="lock")
-    async def lock_command(self, ctx: commands.Context, channel: str, silent: Optional[str]=None, duration: Optional[str]=None, reason: Optional[str]=None):
-        if silent and silent != "-s":
-            reason = duration
-            duration = silent
+    @discord.app_commands.command(name="lock", description="Locks a channel.")
+    @discord.app_commands.describe(channel="The channel to lock.")
+    @discord.app_commands.describe(silent="Silences the lock message.")
+    @discord.app_commands.describe(duration="The duration of the lock.")
+    @discord.app_commands.describe(reason="The reason for the lock.")
+    async def lock_command(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel]=None, silent: Optional[bool]=None, duration: Optional[str]=None, reason: Optional[str]=None):
+        if not silent:
             silent = False
-        elif silent == "-s":
-            silent = True
-        
-        if "<#" in channel:
-            channel = int(channel[2:-1])
             
-        target_channel = ctx.guild.get_channel(channel)
-        target_channel = target_channel or ctx.channel
-        overwrite = target_channel.overwrites_for(ctx.guild.default_role)
+        target_channel = channel or interaction.channel
+        overwrite = target_channel.overwrites_for(interaction.guild.default_role)
         overwrite.send_messages = False
-        await target_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+        await target_channel.set_permissions(interaction.guild.default_role, overwrite=overwrite)
         
         expiry_date = self.get_duration(duration)
         
         if expiry_date:
-            self.db.new_locked_channel(target_channel.id, expiry_date, reason, ctx.author.id)
+            self.db.new_locked_channel(target_channel.id, expiry_date, reason, interaction.user.id)
         
         if silent:
             return
@@ -928,25 +878,23 @@ class ModerationCommands(commands.Cog):
             timestamp=dt.datetime.now()
         )
         
-        embed.set_thumbnail(url=ctx.author.display_avatar)
+        embed.set_thumbnail(url=interaction.user.display_avatar)
         embed.set_author(name="Hanabi Bot") 
         embed.add_field(name=f'#{target_channel.name} has been locked.', value=f'')
-        embed.set_footer(text=f'{ctx.author}')
+        embed.set_footer(text=f'{interaction.user}')
         await target_channel.send(embed=embed)
     
-    @commands.command(name="unlock")
-    async def unlock_command(self, ctx: commands.Context, channel: str, silent: Optional[str]=None):
-        if silent == "-s":
-            silent = True
+    @discord.app_commands.command(name="unlock", description="Unlocks a locked channel.")
+    @discord.app_commands.describe(channel="The channel to unlock.")
+    @discord.app_commands.describe(silent="Silences the unlock message.")
+    async def unlock_command(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel]=None, silent: Optional[bool]=None):
+        if not silent:
+            silent = False
         
-        if "<#" in channel:
-            channel = int(channel[2:-1])
-            
-        target_channel = ctx.guild.get_channel(channel)
-        target_channel = target_channel or ctx.channel
-        overwrite = target_channel.overwrites_for(ctx.guild.default_role)
+        target_channel = target_channel or interaction.channel
+        overwrite = target_channel.overwrites_for(interaction.guild.default_role)
         overwrite.send_messages = True
-        await target_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+        await target_channel.set_permissions(interaction.guild.default_role, overwrite=overwrite)
         
         locked_channel = LockedChannel(self.db.get_locked_channel(target_channel.id))
         if locked_channel:
@@ -961,10 +909,10 @@ class ModerationCommands(commands.Cog):
             timestamp=dt.datetime.now()
         )
         
-        embed.set_thumbnail(url=ctx.author.display_avatar)
+        embed.set_thumbnail(url=interaction.user.display_avatar)
         embed.set_author(name="Hanabi Bot") 
         embed.add_field(name=f'#{target_channel.name} has been locked.', value=f'')
-        embed.set_footer(text=f'{ctx.author}')
+        embed.set_footer(text=f'{interaction.user}')
         await target_channel.send(embed=embed)
     
 async def setup(bot: commands.Bot):
