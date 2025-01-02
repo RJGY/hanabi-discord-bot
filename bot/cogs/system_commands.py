@@ -182,6 +182,8 @@ class SystemCommands(commands.Cog):
         """Syncs the bot with slash commands."""
         await ctx.defer()
         synced = await self.bot.tree.sync()
+        for command in synced:
+            await ctx.send(f"Synced {command.name} with slash commands.")
         await ctx.send(f"Synced {len(synced)} commands with slash commands.")
     
 
