@@ -2,6 +2,9 @@ import json
 
 class SavedChannel():
     def __init__(self, args: list) -> None:
+        if not args:
+            self = None
+            return
         self.db_id = int(args[0])
         self.channel_id = int(args[1])
         self.save_name = args[2]

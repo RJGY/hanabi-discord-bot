@@ -2,7 +2,8 @@ import datetime as dt
 
 class LockedChannel():
     def __init__(self, args) -> None:
-        if len(args) != 5:
+        if not args or len(args) != 5:
+            self = None
             return
         self.id = args[0]
         self.channel_id = args[1]

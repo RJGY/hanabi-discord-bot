@@ -59,9 +59,12 @@ class SaveCommands(commands.Cog):
     @discord.app_commands.describe(channel="The channel to reset.")
     @discord.app_commands.describe(name="The name of the save.")
     async def reset_command(self, interaction: discord.Interaction, name: str, channel: Optional[discord.TextChannel]=None):
+        if not channel:
+            channel = interaction.channel
+            
         if name:
-            saved_channel = SavedChannel(self.db.get_saved_channel(channel, name))
-            if not saved_channel:
+            saved_channel = SavedChannel(self.db.get_saved_channel(channel.id, name))
+            if not saved_channel or len(saved_channel.__dict__) < 1:
                 embed = discord.Embed(
                     title="Could not reset channel",
                     colour=discord.Colour.blue(),
@@ -70,11 +73,13 @@ class SaveCommands(commands.Cog):
             
                 embed.set_thumbnail(url=interaction.user.display_avatar)
                 embed.set_author(name="Hanabi Bot") 
-                embed.add_field(name=f'Channel was not found.', value=f'Could not find saved channel {channel} {name}.')
+                embed.add_field(name=f'Channel was not found.', value=f'Could not find saved channel {channel} of name {name}.')
                 embed.set_footer(text=f'{interaction.user}')
                 await interaction.response.send_message(embed=embed)
+                return
         else:
-            saved_channels = [SavedChannel(channel) for channel in self.db.get_channels_from_id(channel)]
+            saved_channels = [SavedChannel(channel) for channel in self.db.get_channels_from_id(channel.id)]
+            saved_channels = [channel for channel in saved_channels if len(channel.__dict__) > 0]
             if not saved_channels:
                 embed = discord.Embed(
                     title="Could not reset channel",
@@ -118,6 +123,7 @@ class SaveCommands(commands.Cog):
     @discord.app_commands.describe(name="The name of the save.")
     async def save_command(self, interaction: discord.Interaction, name: str):
         if not name:
+            await interaction.response.send_message("Please provide a name for the save.")
             return
         
         if self.db.get_saved_server(interaction.guild.id, name):
@@ -170,6 +176,7 @@ class SaveCommands(commands.Cog):
     @discord.app_commands.describe(name="The name of the save.")
     async def restore_command(self, interaction: discord.Interaction, name: str):
         if not name:
+            await interaction.response.send_message("Please provide a name for the save.")
             return
         
         if not self.db.get_saved_server(interaction.guild.id, name):
@@ -305,7 +312,7 @@ class SaveCommands(commands.Cog):
             embed.set_thumbnail(url=interaction.user.display_avatar)
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Maintenance Mode has been enabled.', value=f'')
-            embed.set_footer(text=f'{interaction.author}')
+            embed.set_footer(text=f'{interaction.user}')
             await interaction.response.send_message(embed=embed)
     
 async def setup(bot: commands.Bot):
