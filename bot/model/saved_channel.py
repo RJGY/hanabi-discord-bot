@@ -14,10 +14,7 @@ class SavedChannel():
         self.type = args[5]
         self.position = int(args[6])
         self.parent = int(args[7])
-        logging.info(f'8th arg: {args[8]}')
-        logging.info(f'type: {type(args[8])}')
         new_string = str(args[8]).replace("'", '"').replace('False', '"False"').replace('True', '"True"')
-        logging.info(f'8th arg: "{new_string}"')
         permissions_json = json.loads(new_string)
         for key, value in permissions_json.items():
                 if value == 'False':
