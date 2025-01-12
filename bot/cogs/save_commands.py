@@ -161,7 +161,7 @@ class SaveCommands(commands.Cog):
             
         embed = discord.Embed(
             title="Saved Server",
-            colour=discord.Colour.red(),
+            colour=discord.Colour.blue(),
             timestamp=dt.datetime.now()
         )
         
@@ -260,7 +260,7 @@ class SaveCommands(commands.Cog):
 
         embed = discord.Embed(
             title="Restored Server",
-            colour=discord.Colour.red(),
+            colour=discord.Colour.blue(),
             timestamp=dt.datetime.now()
         )
         

@@ -169,21 +169,23 @@ class ModerationCommands(commands.Cog):
             embed.add_field(name=f'{command.author} (ID: {command.author.id}) ran command {command.message.content} in {command.channel}', value='', inline=False)
         await self.bot.get_channel(self.staff_logs).send(embed=embed)
         
-    async def on_command_fail(self, command: Optional[commands.Context]=None, interaction: Optional[discord.Interaction]=None):
+    async def on_command_fail(self, command: Optional[commands.Context]=None, interaction: Optional[discord.Interaction]=None, message: Optional[str]=None):
         """On command fail function."""
         embed = discord.Embed(
             title="Command Used",
-            colour=discord.Colour.green(),
+            colour=discord.Colour.red(),
             timestamp=dt.datetime.now()
         )
+        embed.set_author(name="Hanabi Bot")
         if command:
             embed.set_thumbnail(url=command.author.display_avatar)
-            embed.set_author(name="Hanabi Bot")
-            embed.add_field(name=f'{command.author} (ID: {command.author.id}) attempted to exeucte {command.message.content} in {command.channel}', value='Failed Reason: No Permission', inline=False)
-        else:
+            embed.add_field(name=f'{command.author} (ID: {command.author.id}) attempted to execute {command.message.content} in {command.channel}', value=f'Failed Reason: {message}', inline=False)
+        elif interaction:
             embed.set_thumbnail(url=interaction.user.display_avatar)
-            embed.set_author(name="Hanabi Bot")
-            embed.add_field(name=f'{interaction.user} (ID: {interaction.user.id}) attempted to exeucte {interaction.message.content} in {interaction.channel}', value='Failed Reason: No Permission', inline=False)
+            embed.add_field(name=f'{interaction.user} (ID: {interaction.user.id}) attempted to execute {interaction} in {interaction.channel}', value=f'Failed Reason: {message}', inline=False)
+        else:
+            embed.add_field(name=f'Attempted to execute command.', value=f'Failed Reason: {message}', inline=False)   
+        logging.info("Sending failed command message.")    
         await self.bot.get_channel(self.staff_logs).send(embed=embed)
         
     """Tasks"""
@@ -388,7 +390,7 @@ class ModerationCommands(commands.Cog):
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
             embed.set_footer(text=f'{interaction.user.display_name}')
             await interaction.response.send_message(embed=embed)
-            await self.on_command_fail(interaction)
+            await self.on_command_fail(interaction, message="No permission")
         
     @discord.app_commands.command(name="untimeout", description="Removes timeout from a user.")
     @discord.app_commands.describe(member="The user to remove the timeout from.")
@@ -442,7 +444,7 @@ class ModerationCommands(commands.Cog):
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
             embed.set_footer(text=f'{interaction.user}')
             await interaction.response.send_message(embed=embed)
-            await self.on_command_fail(interaction=interaction)
+            await self.on_command_fail(interaction=interaction, message="No permission")
             
     @discord.app_commands.command(name="kick", description="Kicks a user from guild.")
     @discord.app_commands.describe(member="The user to kick.")
@@ -496,7 +498,7 @@ class ModerationCommands(commands.Cog):
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
             embed.set_footer(text=f'{interaction.user}')
             await interaction.response.send_message(embed=embed)
-            await self.on_command_fail(interaction=interaction)
+            await self.on_command_fail(interaction=interaction, message="No permission")
             
     @discord.app_commands.command(name="ban", description="Bans a user from guild.")
     @discord.app_commands.describe(member="The user to ban.")
@@ -555,7 +557,7 @@ class ModerationCommands(commands.Cog):
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
             embed.set_footer(text=f'{interaction.user}')
             await interaction.response.send_message(embed=embed)
-            await self.on_command_fail(interaction=interaction)
+            await self.on_command_fail(interaction=interaction, message="No permission")
             
     @discord.app_commands.command(name="unban", description="Unbans a user from guild.")
     @discord.app_commands.describe(member="The user to unban.")
@@ -575,6 +577,7 @@ class ModerationCommands(commands.Cog):
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Member was not found.', value='')
             interaction.response.send_message(embed=embed)
+            await self.on_command_fail(interaction=interaction, message="No member found")
             return
             
         user_role = User(self.db.get_user(interaction.user.id)).role
@@ -595,13 +598,15 @@ class ModerationCommands(commands.Cog):
             embed.set_footer(text=f'{interaction.user}')
             await interaction.response.send_message(embed=embed)
         else:
-            await self.on_command_fail(interaction=interaction)
+            await self.on_command_fail(interaction=interaction, message="No permission")
             
     @discord.app_commands.command(name="history", description="Gets chat history of a user.")
     @discord.app_commands.describe(member="The user to retrieve chat history from.")
     @discord.app_commands.describe(channel="The channel to retrieve chat history from.")
     async def history_command(self, interaction: discord.Interaction, member: discord.Member, channel: Optional[discord.TextChannel]=None):
         """Gets chat history of a user."""
+        await interaction.response.defer()
+        
         if not member:
             embed = discord.Embed(
                 title="Error",
@@ -610,7 +615,7 @@ class ModerationCommands(commands.Cog):
             )
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Member was not found.', value='')
-            interaction.response.send_message(embed=embed)
+            interaction.followup.send(embed=embed)
             return
         
         user_role = User(self.db.get_user(interaction.user.id)).role
@@ -624,8 +629,8 @@ class ModerationCommands(commands.Cog):
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Reason: No permission.', value='', inline=False)
             embed.set_footer(text=f'{interaction.user}')
-            await interaction.response.send_message(embed=embed)
-            await self.on_command_fail(interaction=interaction)
+            await interaction.followup.send(embed=embed)
+            await self.on_command_fail(interaction=interaction, message="No permission")
             return
         
         target_channel = None
@@ -639,6 +644,17 @@ class ModerationCommands(commands.Cog):
             target_channel = channel
             
         if not target_channel:
+            embed = discord.Embed(
+                title="Failed to execute history command.",
+                colour=discord.Colour.dark_blue(),
+                timestamp=dt.datetime.now()
+            )
+            embed.set_thumbnail(url=interaction.user.display_avatar)
+            embed.set_author(name="Hanabi Bot")
+            embed.add_field(name=f'Reason: No channel detected.', value='', inline=False)
+            embed.set_footer(text=f'{interaction.user}')
+            await interaction.followup.send(embed=embed)
+            await self.on_command_fail(interaction=interaction, message="No channel detected")
             return
         
         
@@ -654,9 +670,11 @@ class ModerationCommands(commands.Cog):
             embed.set_author(name="Hanabi Bot")
             embed.add_field(name=f'Reason: No messages sent.', value='', inline=False)
             embed.set_footer(text=f'{interaction.user}')
+            await interaction.followup.send(embed=embed)
+            await self.on_command_fail(interaction=interaction)
             return
         
-        self.on_command_success(interaction=interaction)
+        await self.on_command_success(interaction=interaction)
         
         message_str = ""
         for message in messages: 
@@ -677,7 +695,7 @@ class ModerationCommands(commands.Cog):
         embed.add_field(name=f'{member.display_name} Chat  :', value=f'{channel_name}', inline=False)
         embed.add_field(name=f'Pastebin Link:', value=f'{last_paste}', inline=False)
         embed.set_footer(text=f'{interaction.user}')
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
         
     @discord.app_commands.command(name="addrole", description="Adds a role to a user.")
     @discord.app_commands.describe(member="The user to add the role to.")
@@ -969,6 +987,7 @@ class ModerationCommands(commands.Cog):
     @discord.app_commands.describe(duration="The duration of the lock.")
     @discord.app_commands.describe(reason="The reason for the lock.")
     async def lock_command(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel]=None, silent: Optional[bool]=None, duration: Optional[str]=None, reason: Optional[str]=None):
+        await interaction.response.defer()
         if not silent:
             silent = False
             
@@ -995,12 +1014,13 @@ class ModerationCommands(commands.Cog):
         embed.set_author(name="Hanabi Bot") 
         embed.add_field(name=f'#{target_channel.name} has been locked.', value=f'')
         embed.set_footer(text=f'{interaction.user}')
-        await target_channel.send(embed=embed)
+        await interaction.followup.send(embed=embed)
     
     @discord.app_commands.command(name="unlock", description="Unlocks a locked channel.")
     @discord.app_commands.describe(channel="The channel to unlock.")
     @discord.app_commands.describe(silent="Silences the unlock message.")
     async def unlock_command(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel]=None, silent: Optional[bool]=None):
+        await interaction.response.defer()
         if not silent:
             silent = False
         
@@ -1026,7 +1046,7 @@ class ModerationCommands(commands.Cog):
         embed.set_author(name="Hanabi Bot") 
         embed.add_field(name=f'#{target_channel.name} has been unlocked.', value=f'')
         embed.set_footer(text=f'{interaction.user}')
-        await target_channel.send(embed=embed)
+        await interaction.followup.send(embed=embed)
     
 async def setup(bot: commands.Bot):
     await bot.add_cog(ModerationCommands(bot))
